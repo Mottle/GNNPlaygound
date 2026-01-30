@@ -9,12 +9,9 @@ from virtual_graph_vae import VirtualNodeGraphVAE
 
 def main():
     path = './graph_vae/dataset/TUDataset'
-    dataset_name = 'NCI1'
+    # dataset_name = 'NCI1'
+    dataset_name = 'ZINC_full'
     
-    # ⚠️ 重要提示：
-    # 如果你之前运行过代码，./data/TUDataset/NCI1/processed 目录已经存在。
-    # PyG 会检测到已处理的数据，从而**忽略**新的 pre_transform。
-    # 必须先删除 processed 目录！
     processed_dir = os.path.join(path, dataset_name, 'processed')
     if os.path.exists(processed_dir):
         print(f"Deleting old processed data at {processed_dir} to apply new transform...")
@@ -24,7 +21,7 @@ def main():
     dataset = TUDataset(
         path, 
         name=dataset_name, 
-        pre_transform=AddVirtualNode() # <--- 注入我们的逻辑
+        pre_transform=AddVirtualNode()
     )
     
     loader = DataLoader(dataset, batch_size=128, shuffle=True)

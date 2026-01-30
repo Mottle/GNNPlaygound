@@ -37,11 +37,16 @@ class GNN(nn.Module):
             )
         else:
             raise Exception()
+    
+    def save(self, path: str):
+        print(f"Saving GNN to {path}...")
+        torch.save(self.state_dict(), path)
 
     def forward(self, x, edge_index, batch = None):
         for layer in self.layers:
             x = layer(x, edge_index)
             x = F.leaky_relu(x)
+        x = F.dropout(x, self.dropout, training=self.training)
         return x
 
 
@@ -74,7 +79,14 @@ class VirtualNodeGraphVAE(nn.Module):
         # 简单的特征映射 (假设输入已经是 hidden_dim)
         # 如果 NCI1 输入是 One-Hot，这里可以用 Linear
         self.input_proj = nn.Linear(in_channels, hidden_channels)
-        # self.output_proj = nn.Linear(hidden_channels, in_channels)
+    
+    def save_encoder_and_decoder(self, path):
+        if not str.endswith(path, '/'):
+            self.encoder.save(f'{path}/encoder.pth')
+            self.decoder.save(f'{path}/decoder.pth')
+        else:
+            self.encoder.save(f'{path}encoder.pth')
+            self.decoder.save(f'{path}decoder.pth')
 
     def forward(self, data):
         x = data.x
@@ -115,8 +127,6 @@ class VirtualNodeGraphVAE(nn.Module):
         # 每一层 GNN，S 的信息都会流入 V，同时 V 之间互相平滑
         recon_features = self.decoder(h_decode, edge_index_dec)
         
-        # 3. 还原维度
-        # out = self.output_proj(recon_features)
         
         # 返回 (预测的原节点, 真实的原节点)
         return recon_features[~mask], h[~mask]
