@@ -1,54 +1,9 @@
 import torch
+import os
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, GATConv, GINConv
-
-
-class GNN(nn.Module):
-    def __init__(
-        self,
-        channels: int,
-        num_layers: int,
-        backbone: str = ["gcn", "gin", "gat"],
-        dropout: float = 0.2,
-        *args,
-        **kwargs
-    ):
-        super().__init__(*args, **kwargs)
-        self.channels = channels
-        self.num_layers = num_layers
-        self.dropout = dropout
-        self.backbone = backbone
-
-        self.layers = nn.ModuleList([self.build_conv() for _ in range(self.num_layers)])
-
-    def build_conv(self):
-        if self.backbone == "gcn":
-            return GCNConv(self.channels, self.channels)
-        elif self.backbone == "gat":
-            return GATConv(self.channels, self.channels)
-        elif self.backbone == "gin":
-            return GINConv(
-                nn.Sequential(
-                    nn.Linear(self.channels, self.channels),
-                    nn.LeakyReLU(),
-                    nn.Linear(self.channels, self.channels),
-                )
-            )
-        else:
-            raise Exception()
-    
-    def save(self, path: str):
-        print(f"Saving GNN to {path}...")
-        torch.save(self.state_dict(), path)
-
-    def forward(self, x, edge_index, batch = None):
-        for layer in self.layers:
-            x = layer(x, edge_index)
-            x = F.leaky_relu(x)
-        x = F.dropout(x, self.dropout, training=self.training)
-        return x
-
+from gnn import GNN
+from typing import Optional
 
 class VirtualNodeGraphVAE(nn.Module):
     def __init__(
@@ -57,7 +12,9 @@ class VirtualNodeGraphVAE(nn.Module):
         hidden_channels: int,
         num_gnn_layers: int = 3,
         backbone: str = ["gcn", "gin", "gat"],
-        dropout: float = 0.2,
+        dropout: float = 0.2,  
+        num_atom_features: Optional[int] = None,
+        num_bond_features: Optional[int] = None,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -76,11 +33,19 @@ class VirtualNodeGraphVAE(nn.Module):
         # 虚拟节点的可学习初始向量 (替代全0)
         self.virtual_embedding = nn.Embedding(1, hidden_channels)
 
-        # 简单的特征映射 (假设输入已经是 hidden_dim)
-        # 如果 NCI1 输入是 One-Hot，这里可以用 Linear
-        self.input_proj = nn.Linear(in_channels, hidden_channels)
+        if num_atom_features is None:
+            self.atom_embedding = nn.Linear(in_channels, hidden_channels)
+        else:
+            self.atom_embedding = nn.Embedding(num_atom_features, hidden_channels)
+
+        if num_bond_features is not None:
+            self.bond_embedding = nn.Linear(num_bond_features, hidden_channels)
     
-    def save_encoder_and_decoder(self, path):
+    def save_encoder_and_decoder(self, path: str):
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+            print(f"Created directory: {path}")
+
         if not str.endswith(path, '/'):
             self.encoder.save(f'{path}/encoder.pth')
             self.decoder.save(f'{path}/decoder.pth')
@@ -92,10 +57,18 @@ class VirtualNodeGraphVAE(nn.Module):
         x = data.x
         edge_index_enc = data.edge_index_enc
         edge_index_dec = data.edge_index_dec
+        edge_attr_enc = data.edge_attr_enc
+        edge_attr_dec = data.edge_attr_dec
         mask = data.virtual_node_mask
 
-        # 1. Input Project
-        h = self.input_proj(x)
+        ori_h = self.atom_embedding(x)
+        h = F.dropout(ori_h, self.dropout, self.training)
+        
+        h_bond_enc = self.bond_embedding(edge_attr_enc)
+        h_bond_enc = F.dropout(h_bond_enc, self.dropout, self.training)
+
+        h_bond_dec = self.bond_embedding(edge_attr_dec)
+        h_bond_dec = F.dropout(h_bond_dec, self.dropout, self.training)
         
         # 2. 初始化虚拟节点特征
         # 将 mask 为 True 的位置替换为 Embedding
@@ -108,10 +81,11 @@ class VirtualNodeGraphVAE(nn.Module):
         # -------------------------
         # 此时 edge_index_enc 混合了局部连接和全局汇聚
         # 经过 num_layers 层后，h[mask] 里的特征已经聚合了全图信息
-        z_all = self.encoder(h, edge_index_enc)
+        z_all = self.encoder(h, edge_index_enc, h_bond_enc)
         
         # 提取 Latent Code (只取虚拟节点部分)
         z = z_all[mask] # [Batch, Hidden]
+        z = F.dropout(z, self.dropout, self.training)
         
         # -------------------------
         # Decoder 阶段 (Unified)
@@ -120,13 +94,13 @@ class VirtualNodeGraphVAE(nn.Module):
         # 原节点 -> 全0 (Blind，迫使模型从 z 恢复)
         # 虚拟节点 -> z
         h_decode = torch.zeros_like(h)
-        h_decode[mask] = z 
+        h_decode[mask] = z
         
         # 运行 Decoder GNN
         # 此时 edge_index_dec 混合了局部连接(原图结构)和全局广播(S->V)
         # 每一层 GNN，S 的信息都会流入 V，同时 V 之间互相平滑
-        recon_features = self.decoder(h_decode, edge_index_dec)
+        recon_features = self.decoder(h_decode, edge_index_dec, h_bond_dec)
         
         
         # 返回 (预测的原节点, 真实的原节点)
-        return recon_features[~mask], h[~mask]
+        return recon_features[~mask], ori_h[~mask]
