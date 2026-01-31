@@ -1,0 +1,33 @@
+# config_finetune.yaml
+out_dir: results/finetune_tox21
+wandb:
+  use: True
+  project: gnn_finetune_tox21
+
+dataset:
+  name: Tox21
+  root: ./graph_vae/dataset/MoleculeNet
+  batch_size: 32
+  split_ratios: [0.8, 0.1, 0.1]
+
+pretrained:
+  path: ./graph_vae/saved/encoder.pth
+
+model:
+  hidden_dim: 512
+  backbone: gated_gcn
+  num_gnn_layers: 5
+  dropout: 0.2
+
+train:
+  # Phase 1: Warmup (冻结骨干)
+  warmup_epochs: 20
+  warmup_lr: 0.01
+  
+  # Phase 2: Fine-tuning (全量微调)
+  finetune_epochs: 100
+  finetune_lr_base: 0.001      # 分类头和Embedding的学习率
+  finetune_lr_encoder: 0.0001  # 骨干网络的学习率 
+  factor: 0.5
+  patience: 5
+  min_lr: 1e-6

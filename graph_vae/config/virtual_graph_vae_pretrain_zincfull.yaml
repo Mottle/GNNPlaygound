@@ -1,0 +1,25 @@
+# config.yaml
+out_dir: graph_vae/results/vae_zinc
+wandb:
+  use: True
+  project: zinc_vae_pretrain
+
+dataset:
+  name: ZINC_full
+  dir: ./graph_vae/dataset/TUDataset
+  batch_size: 128
+  num_workers: 4
+
+train:
+  max_epoch: 50
+  lr: 0.001
+  factor: 0.5
+  patience: 5
+  min_lr: 1e-6
+
+model:
+  hidden_dim: 512
+  backbone: gated_gcn
+  num_gnn_layers: 5
+  dropout: 0.5
+  seed: 42
