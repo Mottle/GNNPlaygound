@@ -4,13 +4,14 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.datasets import TUDataset
 from torch_geometric.loader import DataLoader
-from virtual_node_pre_transform import AddVirtualNode
-from virtual_graph_vae import VirtualNodeGraphVAE
+from graph_vae.virtual_node_pre_transform import AddVirtualNode
+from graph_vae.virtual_graph_vae import VirtualNodeGraphVAE
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from rich.progress import track
-from perf_counter import measure_time
-from seed import seed_everything
+from utils.perf_counter import measure_time
+from utils.seed_manual import seed_everything
 
+# @torch.compile
 def train_epoch(loader,optimizer, model, device):
     total_loss = 0
     for data in loader:
@@ -30,6 +31,7 @@ def main():
     path = "./graph_vae/dataset/TUDataset"
     # dataset_name = 'NCI1'
     dataset_name = "ZINC_full"
+    BATCH_SIZE = 128
 
     processed_dir = os.path.join(path, dataset_name, "processed")
     if os.path.exists(processed_dir):
@@ -42,16 +44,17 @@ def main():
         path, name=dataset_name, pre_transform=AddVirtualNode(mode="zinc")
     )
 
-    loader = DataLoader(dataset, batch_size=128, shuffle=True)
+    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = VirtualNodeGraphVAE(
         dataset.num_features,
-        hidden_channels=64,
+        hidden_channels=512,
         backbone="gated_gcn",
         num_gnn_layers=5,
         # num_features=dataset.num_features,
         num_bond_features=dataset.edge_attr.size(1) + 1,
+        dropout=0.5
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -63,12 +66,12 @@ def main():
         min_lr=1e-6,  # 学习率下限
     )
 
-    train_epoch = measure_time(train_epoch)
+    measured_train_epoch = measure_time(train_epoch)
 
     model.train()
     for epoch in track(range(1, 50), description=f"Train {dataset}:"):
         total_loss = 0
-        total_loss, spend_time = train_epoch(loader, optimizer, model, device)
+        total_loss, spend_time = measured_train_epoch(loader, optimizer, model, device)
         avg_loss = total_loss / len(loader)
         scheduler.step(avg_loss)
 

@@ -7,12 +7,12 @@ from torch_geometric.datasets import MoleculeNet
 from torch_geometric.loader import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from rich.progress import track
-from scaffold import scaffold_split
+from utils.scaffold import scaffold_split
 from sklearn.metrics import roc_auc_score
-from seed import seed_everything
+from utils.seed_manual import seed_everything
 
-from virtual_graph_vae import GNN
-from virtual_node_pre_transform import AddVirtualNode
+from graph_vae.virtual_graph_vae import GNN
+from graph_vae.virtual_node_pre_transform import AddVirtualNode
 
 
 @torch.no_grad()
@@ -194,10 +194,11 @@ def main():
         num_node_features=dataset.num_features,
         num_bond_types=calculated_num_bond_types,
         num_bond_features=dataset[0].edge_attr_enc.size(1),
-        hidden_channels=64,
+        hidden_channels=512,
         num_gnn_layers=5,
         backbone="gated_gcn",
         num_tasks=dataset.y.shape[1],
+        dropout=0.5
     ).to(DEVICE)
 
     if os.path.exists(PRETRAINED_PATH):

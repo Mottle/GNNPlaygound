@@ -2,7 +2,7 @@ import torch
 import os
 import torch.nn as nn
 import torch.nn.functional as F
-from gnn import GNN
+from graph_vae.gnn import GNN
 from typing import Optional
 
 class VirtualNodeGraphVAE(nn.Module):
