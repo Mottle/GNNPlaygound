@@ -14,7 +14,6 @@ from utils.seed_manual import seed_everything
 from graph_vae.virtual_graph_vae import GNN
 from graph_vae.virtual_node_pre_transform import AddVirtualNode
 
-
 @torch.no_grad()
 def eval_model(model, loader, device):
     model.eval()
