@@ -103,4 +103,4 @@ class VirtualNodeGraphVAE(nn.Module):
         
         
         # 返回 (预测的原节点, 真实的原节点)
-        return recon_features[~mask], ori_h[~mask]
+        return z, recon_features[~mask], ori_h[~mask]

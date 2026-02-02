@@ -53,6 +53,7 @@ def get_cfg_defaults():
     cfg.train.finetune_epochs = 100
     cfg.train.finetune_lr_base = 0.001
     cfg.train.finetune_lr_encoder = 0.0001
+    cfg.train.finetune_lr_head = 0.0001
     cfg.train.factor = 0.5
     cfg.train.patience = 5
     cfg.train.min_lr = 1e-6
@@ -307,12 +308,14 @@ def main(cfg):
 
     # Differential Learning Rates
     encoder_params_ids = list(map(id, model.encoder.parameters()))
-    base_params = filter(lambda p: id(p) not in encoder_params_ids, model.parameters())
+    head_params_ids = list(map(id, model.classifier_head.parameters()))
+    base_params = filter(lambda p: id(p) not in encoder_params_ids and id(p) not in head_params_ids, model.parameters())
 
     optimizer = torch.optim.Adam(
         [
             {"params": model.encoder.parameters(), "lr": cfg.train.finetune_lr_encoder},
             {"params": base_params, "lr": cfg.train.finetune_lr_base},
+            {'params': model.classifier_head.parameters(), 'lr': cfg.train.finetune_lr_head}
         ]
     )
 
