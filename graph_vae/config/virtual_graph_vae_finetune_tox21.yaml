@@ -7,7 +7,7 @@ wandb:
 dataset:
   name: Tox21
   root: ./graph_vae/dataset/MoleculeNet
-  batch_size: 32
+  batch_size: 128
   split_ratios: [0.8, 0.1, 0.1]
 
 pretrained:
