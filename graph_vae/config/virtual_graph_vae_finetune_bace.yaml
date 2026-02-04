@@ -1,11 +1,11 @@
 # config_finetune.yaml
-out_dir: results/finetune_tox21
+out_dir: results/finetune_bace
 wandb:
   use: True
-  project: gnn_finetune_tox21
+  project: gnn_finetune_bace
 
 dataset:
-  name: Tox21
+  name: BACE
   root: ./graph_vae/dataset/MoleculeNet
   batch_size: 128
   split_ratios: [0.8, 0.1, 0.1]
