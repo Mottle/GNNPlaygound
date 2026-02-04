@@ -116,7 +116,7 @@ def train_epoch(loader, optimizer, model, device):
         # loss = mtl_loss([rec_loss, reg_loss])
         # loss = rec_loss + reg_loss
 
-        loss = F.mse_loss(pred, target)
+        loss = F.cross_entropy(pred, target)
 
         loss.backward()
         optimizer.step()

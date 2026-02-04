@@ -36,8 +36,7 @@ class VirtualNodeGraphVAE(nn.Module):
         self.atom_embedding = nn.Linear(num_atom_features, hidden_channels)
         self.bond_embedding = nn.Linear(num_bond_features, hidden_channels)
 
-        self.classifier = nn.Sequential(nn.Linear(hidden_channels, in_channels), 
-                                        nn.Sigmoid())
+        self.classifier = nn.Sequential(nn.Linear(hidden_channels, in_channels))
     
     def save_encoder_and_decoder(self, path: str):
         if not os.path.exists(path):
@@ -102,3 +101,43 @@ class VirtualNodeGraphVAE(nn.Module):
         
         # 返回 (预测的原节点, 真实的原节点)
         return z, out[~mask], data.x[~mask]
+    
+
+
+def mask_nodes(x, batch, mask_ratio=0.15):
+    device = x.device
+    num_nodes = x.size(0)
+    batch_size = batch.max().item() + 1
+    
+    # 1. 定位虚拟节点（每个 batch 的最后一个节点）
+    # 在 PyG 平铺格式中，当 batch[i] != batch[i+1] 时，i 是当前图的最后一个节点
+    # 我们构造一个 diff 向量，并在末尾补 1 确保最后一个图的最后节点也被选中
+    diff = torch.cat([batch[1:] - batch[:-1], torch.tensor([1], device=device)])
+    is_virtual_node = diff > 0
+    maskable_nodes_mask = ~is_virtual_node
+
+    # 2. 准备掩码容器
+    node_mask = torch.zeros(num_nodes, dtype=torch.bool, device=device)
+    
+    # 3. 逐图处理掩码逻辑
+    # 虽然这里使用了循环，但在 batch_size=128 的量级下，耗时远小于 GNN 运算
+    for i in range(batch_size):
+        # 仅选择当前 batch 内且非虚拟节点的索引
+        current_batch_mask = (batch == i) & maskable_nodes_mask
+        idx = current_batch_mask.nonzero(as_tuple=True)[0]
+        
+        if len(idx) == 0:
+            continue
+        
+        # 计算该图需要掩码的数量（向上取整确保至少有一个点被盖住，增强扰动）
+        num_to_mask = torch.ceil(torch.tensor(len(idx), device=device) * mask_ratio).long()
+        
+        # 随机采样并标记
+        perm = torch.randperm(len(idx), device=device)[:num_to_mask]
+        node_mask[idx[perm]] = True
+    
+    # 4. 生成掩码后的特征
+    x_masked = x.clone()
+    x_masked[node_mask] = 0.0
+    
+    return x_masked, node_mask
