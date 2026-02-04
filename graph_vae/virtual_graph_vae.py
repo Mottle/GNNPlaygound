@@ -33,13 +33,11 @@ class VirtualNodeGraphVAE(nn.Module):
         # 虚拟节点的可学习初始向量 (替代全0)
         self.virtual_embedding = nn.Embedding(1, hidden_channels)
 
-        if num_atom_features is None:
-            self.atom_embedding = nn.Linear(in_channels, hidden_channels)
-        else:
-            self.atom_embedding = nn.Embedding(num_atom_features, hidden_channels)
+        self.atom_embedding = nn.Linear(num_atom_features, hidden_channels)
+        self.bond_embedding = nn.Linear(num_bond_features, hidden_channels)
 
-        if num_bond_features is not None:
-            self.bond_embedding = nn.Linear(num_bond_features, hidden_channels)
+        self.classifier = nn.Sequential(nn.Linear(hidden_channels, in_channels), 
+                                        nn.Sigmoid())
     
     def save_encoder_and_decoder(self, path: str):
         if not os.path.exists(path):
@@ -100,7 +98,7 @@ class VirtualNodeGraphVAE(nn.Module):
         # 此时 edge_index_dec 混合了局部连接(原图结构)和全局广播(S->V)
         # 每一层 GNN，S 的信息都会流入 V，同时 V 之间互相平滑
         recon_features = self.decoder(h_decode, edge_index_dec, h_bond_dec)
-        
+        out = self.classifier(recon_features)
         
         # 返回 (预测的原节点, 真实的原节点)
-        return z, recon_features[~mask], ori_h[~mask]
+        return z, out[~mask], data.x[~mask]

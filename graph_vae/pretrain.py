@@ -49,55 +49,55 @@ def get_cfg_defaults():
     return cfg
 
 
-class Classifier(torch.nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.mlp = torch.nn.Sequential(
-            torch.nn.Linear(in_channels, out_channels),
-            torch.nn.LeakyReLU(),
-            torch.nn.Linear(out_channels, out_channels),
-            torch.nn.Dropout(p=0.3),
-        )
+# class Classifier(torch.nn.Module):
+#     def __init__(self, in_channels: int, out_channels: int, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self.mlp = torch.nn.Sequential(
+#             torch.nn.Linear(in_channels, out_channels),
+#             torch.nn.LeakyReLU(),
+#             torch.nn.Linear(out_channels, out_channels),
+#             torch.nn.Dropout(p=0.3),
+#         )
 
-    def forward(self, x):
-        return self.mlp(x)
+#     def forward(self, x):
+#         return self.mlp(x)
 
 
-class MultiTaskLoss(nn.Module):
-    def __init__(self, num_tasks=2):
-        super(MultiTaskLoss, self).__init__()
-        # 初始化 log_vars (对应公式中的 s)
-        # 初始化为 0 相当于初始权重 a=1, b=1
-        self.log_vars = nn.Parameter(torch.zeros(num_tasks))
+# class MultiTaskLoss(nn.Module):
+#     def __init__(self, num_tasks=2):
+#         super(MultiTaskLoss, self).__init__()
+#         # 初始化 log_vars (对应公式中的 s)
+#         # 初始化为 0 相当于初始权重 a=1, b=1
+#         self.log_vars = nn.Parameter(torch.zeros(num_tasks))
 
-    def forward(self, input_losses):
-        """
-        input_losses: 一个包含多个 loss 值的列表 [loss_rec, loss_reg]
-        """
-        # 确保输入 loss 和参数在同一个设备上
-        total_loss = 0
-        for i, loss in enumerate(input_losses):
-            # 获取对应的 log_var
-            log_var = self.log_vars[i]
+#     def forward(self, input_losses):
+#         """
+#         input_losses: 一个包含多个 loss 值的列表 [loss_rec, loss_reg]
+#         """
+#         # 确保输入 loss 和参数在同一个设备上
+#         total_loss = 0
+#         for i, loss in enumerate(input_losses):
+#             # 获取对应的 log_var
+#             log_var = self.log_vars[i]
 
-            # 执行公式: 1/(2a^2) * loss + log(a)
-            # 等价于: 0.5 * exp(-s) * loss + 0.5 * s
-            weighted_loss = 0.5 * torch.exp(-log_var) * loss + 0.5 * log_var
-            total_loss += weighted_loss
+#             # 执行公式: 1/(2a^2) * loss + log(a)
+#             # 等价于: 0.5 * exp(-s) * loss + 0.5 * s
+#             weighted_loss = 0.5 * torch.exp(-log_var) * loss + 0.5 * log_var
+#             total_loss += weighted_loss
 
-        return total_loss
-    
-    def par(self):
-        return self.log_vars
+#         return total_loss
+
+#     def par(self):
+#         return self.log_vars
 
 
 # @torch.compile (Debug时建议先注释掉，稳定后再开)
-def train_epoch(loader, optimizer, model, classifier, mtl_loss, device):
+def train_epoch(loader, optimizer, model, device):
     total_loss = 0
-    total_rec_loss = 0
-    total_reg_loss = 0
+    # total_rec_loss = 0
+    # total_reg_loss = 0
     model.train()
-    classifier.train()
+    # classifier.train()
 
     reg_criterion = torch.nn.L1Loss()
 
@@ -107,22 +107,24 @@ def train_epoch(loader, optimizer, model, classifier, mtl_loss, device):
 
         # Forward
         z, pred, target = model(data)
-        y_hat = classifier(z)
-        y_target = data.y.view(-1, 1).float()
+        # y_hat = classifier(z)
+        # y_target = data.y.view(-1, 1).float()
 
-        rec_loss = sce_loss(pred, target)
-        reg_loss = reg_criterion(y_hat, y_target)
+        # rec_loss = sce_loss(pred, target)
+        # reg_loss = reg_criterion(y_hat, y_target)
 
-        loss = mtl_loss([rec_loss, reg_loss])
+        # loss = mtl_loss([rec_loss, reg_loss])
         # loss = rec_loss + reg_loss
+
+        loss = F.mse_loss(pred, target)
 
         loss.backward()
         optimizer.step()
-        total_rec_loss += rec_loss.item()
-        total_reg_loss += reg_loss.item()
+        # total_rec_loss += rec_loss.item()
+        # total_reg_loss += reg_loss.item()
         total_loss += loss.item()
 
-    return total_loss, total_rec_loss, total_reg_loss
+    return total_loss  # , total_rec_loss, total_reg_loss
 
 
 def main(cfg):
@@ -165,21 +167,22 @@ def main(cfg):
         hidden_channels=cfg.model.hidden_dim,
         backbone=cfg.model.backbone,
         num_gnn_layers=cfg.model.num_gnn_layers,
+        num_atom_features=dataset.num_node_features,
         num_bond_features=dataset.edge_attr.size(1) + 1,
         dropout=cfg.model.dropout,
     ).to(device)
 
-    classifier = Classifier(cfg.model.hidden_dim, 1).to(device)
+    # classifier = Classifier(cfg.model.hidden_dim, 1).to(device)
 
-    mtl_loss = MultiTaskLoss(num_tasks=2).to(device)
+    # mtl_loss = MultiTaskLoss(num_tasks=2).to(device)
 
     if cfg.wandb.use:
         wandb.watch(model, log="all")  # 监控梯度和参数分布
 
     optimizer = torch.optim.Adam(
-        list(model.parameters())
-        + list(classifier.parameters())
-        + list(mtl_loss.parameters()),
+        list(model.parameters()),
+        # + list(classifier.parameters())
+        # + list(mtl_loss.parameters()),
         lr=cfg.train.lr,
     )
 
@@ -200,12 +203,10 @@ def main(cfg):
         range(1, cfg.train.max_epoch + 1), description=f"Train {dataset.name}:"
     ):
 
-        (epoch_loss, rec_loss, reg_loss), spend_time = measured_train_epoch(
-            loader, optimizer, model, classifier, mtl_loss, device
-        )
+        epoch_loss, spend_time = measured_train_epoch(loader, optimizer, model, device)
         avg_loss = epoch_loss / len(loader)
-        avg_rec_loss = rec_loss / len(loader)
-        avg_reg_loss = reg_loss / len(loader)
+        # avg_rec_loss = rec_loss / len(loader)
+        # avg_reg_loss = reg_loss / len(loader)
 
         scheduler.step(avg_loss)
         current_lr = optimizer.param_groups[0]["lr"]
@@ -220,12 +221,12 @@ def main(cfg):
                 {
                     "epoch": epoch,
                     "train/loss": avg_loss,
-                    "train/rec_loss": avg_rec_loss,
-                    "train/reg_loss": avg_reg_loss,
-                    'train/sigma1': abs(mtl_loss.par()[0].item()),
-                    'train/sigma2': abs(mtl_loss.par()[1].item()),
+                    # "train/rec_loss": avg_rec_loss,
+                    # "train/reg_loss": avg_reg_loss,
+                    # 'train/sigma1': abs(mtl_loss.par()[0].item()),
+                    # 'train/sigma2': abs(mtl_loss.par()[1].item()),
                     "train/lr": current_lr,
-                    "train/time_per_epoch": spend_time, 
+                    "train/time_per_epoch": spend_time,
                 }
             )
 
