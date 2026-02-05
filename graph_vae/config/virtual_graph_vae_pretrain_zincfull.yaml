@@ -22,6 +22,6 @@ model:
   backbone: gated_gcn
   num_gnn_layers: 5
   dropout: 0.5
-  masked_ratio: 0.3
+  masked_ratio: 0.5
 
 seed: 42

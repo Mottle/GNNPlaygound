@@ -6,6 +6,7 @@ import wandb
 from torch_geometric.datasets import TUDataset
 from torch_geometric.loader import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.nn.utils import clip_grad_norm_
 from rich.progress import track
 from yacs.config import CfgNode as CN
 
@@ -13,8 +14,6 @@ from graph_vae.virtual_node_pre_transform import AddVirtualNode
 from graph_vae.virtual_graph_vae import VirtualNodeGraphVAE
 from utils.perf_counter import measure_time
 from utils.seed_manual import seed_everything
-from utils.loss import sce_loss
-import torch.nn as nn
 
 
 def get_cfg_defaults():
@@ -120,6 +119,7 @@ def train_epoch(loader, optimizer, model, device):
         loss = F.cross_entropy(pred, target)
 
         loss.backward()
+        clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         # total_rec_loss += rec_loss.item()
         # total_reg_loss += reg_loss.item()
