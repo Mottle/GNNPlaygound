@@ -19,6 +19,7 @@ import torch.nn as nn
 
 def get_cfg_defaults():
     cfg = CN()
+    cfg.seed = 42
     cfg.out_dir = "./results"
     # Dataset
     cfg.dataset = CN()
@@ -32,7 +33,7 @@ def get_cfg_defaults():
     cfg.model.backbone = "gated_gcn"
     cfg.model.num_gnn_layers = 5
     cfg.model.dropout = 0.5
-    cfg.model.seed = 42
+    cfg.model.masked_ratio = 0.15
     # Train
     cfg.train = CN()
     cfg.train.max_epoch = 50
@@ -140,7 +141,7 @@ def main(cfg):
         )
 
     # 路径处理
-    processed_dir = os.path.join(cfg.dataset.dir, cfg.dataset.name, "processed")
+    # processed_dir = os.path.join(cfg.dataset.dir, cfg.dataset.name, "processed")
     # 这里加个简单的逻辑：如果是为了调试，可以不强制删
     # if os.path.exists(processed_dir):
     #     print(f"Deleting old processed data at {processed_dir}...")
@@ -170,6 +171,7 @@ def main(cfg):
         num_atom_features=dataset.num_node_features,
         num_bond_features=dataset.edge_attr.size(1) + 1,
         dropout=cfg.model.dropout,
+        mask_ratio=cfg.model.masked_ratio,
     ).to(device)
 
     # classifier = Classifier(cfg.model.hidden_dim, 1).to(device)
@@ -254,5 +256,5 @@ if __name__ == "__main__":
 
     cfg.freeze()
 
-    seed_everything(cfg.model.seed)
+    seed_everything(cfg.seed)
     main(cfg)
