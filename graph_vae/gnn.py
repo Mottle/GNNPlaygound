@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, GATConv, GINConv, ResGatedGraphConv, GINEConv
+from torch_geometric.nn import BatchNorm, GraphNorm, LayerNorm
 
 class GNN(nn.Module):
     def __init__(
@@ -9,6 +10,7 @@ class GNN(nn.Module):
         channels: int,
         num_layers: int,
         backbone: str = ["gcn", "gin", "gat"],
+        norm: str = ['layer_norm', 'batch_norm', 'graph_norm'],
         dropout: float = 0.2,
         *args,
         **kwargs
@@ -18,8 +20,10 @@ class GNN(nn.Module):
         self.num_layers = num_layers
         self.dropout = dropout
         self.backbone = backbone
+        self.norm = norm
 
         self.layers = nn.ModuleList([self.build_conv() for _ in range(self.num_layers)])
+        self.norms = nn.ModuleList([self.build_norm() for _ in range(self.num_layers)])
 
     def build_conv(self):
         if self.backbone == 'gcn':
@@ -40,6 +44,18 @@ class GNN(nn.Module):
             # return GINEConv()
         else:
             raise Exception()
+        
+    def build_norm(self):
+        if self.norm == None:
+            return None
+        elif self.norm == 'batch_norm':
+            return BatchNorm(self.channels)
+        elif self.norm == 'layer_norm':
+            return LayerNorm(self.channels)
+        elif self.norm == 'graph_norm':
+            return GraphNorm(self.channels)
+        else:
+            raise NotImplementedError()
     
     def save(self, path: str):
         print(f"Saving GNN to {path}...")
@@ -81,11 +97,16 @@ class GNN(nn.Module):
             print("GNN weights load process completed.")
 
     def forward(self, x, edge_index, edge_attr = None, batch = None):
-        for layer in self.layers:
+        zipped = zip(self.layers, self.norms)
+        for layer, norm in zipped:
             if edge_attr is not None:
                 x = layer(x, edge_index, edge_attr)
             else:
                 x = layer(x, edge_index)
+            
+            if self.norm is not None:
+                x = norm(x)
+
             x = F.leaky_relu(x)
         x = F.dropout(x, self.dropout, training=self.training)
         return x

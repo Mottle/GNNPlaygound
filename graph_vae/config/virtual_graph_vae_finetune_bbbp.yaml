@@ -18,6 +18,7 @@ model:
   backbone: gated_gcn
   num_gnn_layers: 5
   dropout: 0.2
+  norm: layer_norm
 
 train:
   # Phase 1: Warmup (冻结骨干)

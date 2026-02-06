@@ -30,6 +30,7 @@ def get_cfg_defaults():
     cfg.model = CN()
     cfg.model.hidden_dim = 256
     cfg.model.backbone = "gated_gcn"
+    cfg.model.norm = None
     cfg.model.num_gnn_layers = 5
     cfg.model.dropout = 0.5
     cfg.model.masked_ratio = 0.15
@@ -167,6 +168,7 @@ def main(cfg):
         in_channels=dataset.num_features,  # 假设第一个参数是 input_channels
         hidden_channels=cfg.model.hidden_dim,
         backbone=cfg.model.backbone,
+        norm=cfg.model.norm,
         num_gnn_layers=cfg.model.num_gnn_layers,
         num_atom_features=dataset.num_node_features,
         num_bond_features=dataset.edge_attr.size(1) + 1,

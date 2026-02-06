@@ -45,6 +45,7 @@ def get_cfg_defaults():
     cfg.model.backbone = "gated_gcn"
     cfg.model.num_gnn_layers = 5
     cfg.model.dropout = 0.5
+    cfg.model.norm = None
 
     # Train Strategies
     cfg.train = CN()
@@ -97,6 +98,7 @@ class FineTuningModel(nn.Module):
         hidden_channels: int,
         num_gnn_layers: int,
         backbone: str,
+        norm: str,
         num_tasks: int,
         dropout: float = 0.2,
     ):
@@ -123,7 +125,11 @@ class FineTuningModel(nn.Module):
         self.virtual_embedding = nn.Embedding(1, hidden_channels)
 
         self.encoder = GNN(
-            hidden_channels, num_gnn_layers, backbone=backbone, dropout=dropout
+            hidden_channels,
+            num_gnn_layers,
+            backbone=backbone,
+            dropout=dropout,
+            norm=norm,
         )
 
         self.classifier_head = nn.Sequential(
@@ -245,6 +251,7 @@ def main(cfg):
         hidden_channels=cfg.model.hidden_dim,
         num_gnn_layers=cfg.model.num_gnn_layers,
         backbone=cfg.model.backbone,
+        norm = cfg.model.norm,
         num_tasks=dataset.y.shape[1],
         dropout=cfg.model.dropout,
     ).to(DEVICE)
@@ -309,13 +316,19 @@ def main(cfg):
     # Differential Learning Rates
     encoder_params_ids = list(map(id, model.encoder.parameters()))
     head_params_ids = list(map(id, model.classifier_head.parameters()))
-    base_params = filter(lambda p: id(p) not in encoder_params_ids and id(p) not in head_params_ids, model.parameters())
+    base_params = filter(
+        lambda p: id(p) not in encoder_params_ids and id(p) not in head_params_ids,
+        model.parameters(),
+    )
 
     optimizer = torch.optim.Adam(
         [
             {"params": model.encoder.parameters(), "lr": cfg.train.finetune_lr_encoder},
             {"params": base_params, "lr": cfg.train.finetune_lr_base},
-            {'params': model.classifier_head.parameters(), 'lr': cfg.train.finetune_lr_head}
+            {
+                "params": model.classifier_head.parameters(),
+                "lr": cfg.train.finetune_lr_head,
+            },
         ]
     )
 
