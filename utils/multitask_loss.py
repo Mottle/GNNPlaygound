@@ -26,5 +26,5 @@ class MultiTaskLoss(nn.Module):
 
         return total_loss
 
-    def par(self):
+    def get_vars(self):
         return self.log_vars
