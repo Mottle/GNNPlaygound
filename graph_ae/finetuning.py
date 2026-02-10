@@ -14,8 +14,8 @@ from sklearn.metrics import roc_auc_score
 
 from utils.scaffold import scaffold_split
 from utils.seed_manual import seed_everything
-from graph_vae.virtual_graph_vae import GNN
-from graph_vae.virtual_node_pre_transform import AddVirtualNode
+from graph_ae.virtual_graph_ae import GNN
+from graph_ae.virtual_node_pre_transform import AddVirtualNode
 
 
 def get_cfg_defaults():
@@ -31,13 +31,13 @@ def get_cfg_defaults():
     # Dataset
     cfg.dataset = CN()
     cfg.dataset.name = "Tox21"
-    cfg.dataset.root = "./graph_vae/dataset/MoleculeNet"
+    cfg.dataset.root = "./graph_ae/dataset/MoleculeNet"
     cfg.dataset.batch_size = 32
     cfg.dataset.split_ratios = [0.8, 0.1, 0.1]
 
     # Pretrained
     cfg.pretrained = CN()
-    cfg.pretrained.path = "./graph_vae/saved/encoder.pth"
+    cfg.pretrained.path = "./graph_ae/saved/encoder.pth"
 
     # Model
     cfg.model = CN()
@@ -423,11 +423,11 @@ def main(cfg):
         wandb.finish()
 
     # Save
-    if not os.path.exists("./graph_vae/saved/"):
-        os.makedirs("./graph_vae/saved/")
+    if not os.path.exists("./graph_ae/saved/"):
+        os.makedirs("./graph_ae/saved/")
     torch.save(
         model.state_dict(),
-        f"./graph_vae/saved/{str.lower(cfg.dataset.name)}_finetuned.pth",
+        f"./graph_ae/saved/{str.lower(cfg.dataset.name)}_finetuned.pth",
     )
 
 

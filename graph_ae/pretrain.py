@@ -10,8 +10,8 @@ from torch.nn.utils import clip_grad_norm_
 from rich.progress import track
 from yacs.config import CfgNode as CN
 
-from graph_vae.virtual_node_pre_transform import AddVirtualNode
-from graph_vae.virtual_graph_vae import VirtualNodeGraphVAE
+from graph_ae.virtual_node_pre_transform import AddVirtualNode
+from graph_ae.virtual_graph_ae import VirtualNodeGraphAE
 from utils.perf_counter import measure_time
 from utils.seed_manual import seed_everything
 
@@ -23,7 +23,7 @@ def get_cfg_defaults():
     # Dataset
     cfg.dataset = CN()
     cfg.dataset.name = "ZINC_full"
-    cfg.dataset.dir = "./graph_vae/dataset/TUDataset"
+    cfg.dataset.dir = "./graph_ae/dataset/TUDataset"
     cfg.dataset.batch_size = 128
     cfg.dataset.num_workers = 0
     # Model
@@ -44,8 +44,8 @@ def get_cfg_defaults():
     # WandB
     cfg.wandb = CN()
     cfg.wandb.use = False
-    cfg.wandb.project = "graph_vae"
-    cfg.wandb.entity = ""  # 选填
+    cfg.wandb.project = "graph_ae"
+    cfg.wandb.entity = ""
 
     return cfg
 
@@ -113,7 +113,7 @@ def main(cfg):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 使用 cfg 参数初始化模型
-    model = VirtualNodeGraphVAE(
+    model = VirtualNodeGraphAE(
         in_channels=dataset.num_features,  # 假设第一个参数是 input_channels
         hidden_channels=cfg.model.hidden_dim,
         backbone=cfg.model.backbone,
@@ -183,7 +183,7 @@ def main(cfg):
                 }
             )
 
-    model.save_encoder_and_decoder(path="./graph_vae/saved/")
+    model.save_encoder_and_decoder(path="./graph_ae/saved/")
 
     if cfg.wandb.use:
         wandb.finish()

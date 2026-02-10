@@ -1,12 +1,12 @@
 # config.yaml
-out_dir: graph_vae/results/vae_zinc
+out_dir: graph_ae/results/ae_zinc
 wandb:
   use: True
-  project: zinc_vae_pretrain
+  project: zinc_ae_pretrain
 
 dataset:
   name: ZINC_full
-  dir: ./graph_vae/dataset/TUDataset
+  dir: ./graph_ae/dataset/TUDataset
   batch_size: 128
   num_workers: 4
 

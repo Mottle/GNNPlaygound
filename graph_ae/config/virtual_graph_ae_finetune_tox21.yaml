@@ -6,12 +6,12 @@ wandb:
 
 dataset:
   name: Tox21
-  root: ./graph_vae/dataset/MoleculeNet
+  root: ./graph_ae/dataset/MoleculeNet
   batch_size: 128
   split_ratios: [0.8, 0.1, 0.1]
 
 pretrained:
-  path: ./graph_vae/saved/encoder.pth
+  path: ./graph_ae/saved/encoder.pth
 
 model:
   hidden_dim: 256

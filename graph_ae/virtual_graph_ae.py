@@ -2,11 +2,11 @@ import torch
 import os
 import torch.nn as nn
 import torch.nn.functional as F
-from graph_vae.gnn import GNN
+from graph_ae.gnn import GNN
 from typing import Optional
 
 
-class VirtualNodeGraphVAE(nn.Module):
+class VirtualNodeGraphAE(nn.Module):
     def __init__(
         self,
         in_channels: int,
