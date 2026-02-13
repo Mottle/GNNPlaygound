@@ -1,161 +1,110 @@
-import math
+from re import sub
+from typing import Callable
 import torch
-import dgl
-from .random_walk import uniform_random_walk, uniqueness
-from .rnn import GRU
+import torch.nn.functional as F
+# 引入 PyG 的全局池化层
+from torch_geometric.nn import global_mean_pool
+from .layers import RUMLayer, Consistency
 
-class RUMLayer(torch.nn.Module):
+class RUMModel(torch.nn.Module):
     def __init__(
             self,
             in_features: int,
             out_features: int,
-            original_features: int,
-            num_samples: int,
-            length: int,
-            dropout: float = 0.2,
-            rnn: torch.nn.Module = GRU,
-            random_walk: callable = uniform_random_walk,
-            activation: callable = torch.nn.Identity(),
-            edge_features: int = 0,
-            binary: bool = True,
-            directed: bool = False,
-            degrees: bool = True,
-            self_supervise: bool = True,
-            **kwargs
+            hidden_features: int,
+            depth: int,
+            activation: Callable = torch.nn.ELU(),
+            temperature=0.1,
+            self_supervise_weight=0.05,
+            consistency_weight=0.01,
+            **kwargs,
     ):
         super().__init__()
-        # out_features = out_features // 2
-        # self.fc = torch.nn.Linear(in_features + 2 * out_features + 1, out_features, bias=False)
-        self.rnn = rnn(in_features + 2 * out_features + int(degrees), out_features, **kwargs)
-        self.rnn_walk = rnn(2, out_features, bidirectional=True, **kwargs)
-        if edge_features > 0:
-            self.fc_edge = torch.nn.Linear(edge_features, int(degrees) + in_features + 2 * out_features, bias=False)
+        self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=True)
+        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=True)
         self.in_features = in_features
         self.out_features = out_features
-        self.random_walk = random_walk
-        self.num_samples = num_samples
-        self.length = length
-        self.dropout = torch.nn.Dropout(dropout)
-        if self_supervise:
-            self.self_supervise = SelfSupervise(in_features, original_features, binary=binary)
-        else:
-            self.self_supervise = None
+        self.hidden_features = hidden_features
+        self.depth = depth
+        self.layers = torch.nn.ModuleList()
+        # 注意：这里的 RUMLayer 内部也需要适配 PyG (接收 edge_index)
+        for _ in range(depth):
+            self.layers.append(RUMLayer(hidden_features, hidden_features, in_features, **kwargs))
         self.activation = activation
-        self.directed = directed
-        self.degrees = degrees
+        self.consistency = Consistency(temperature=temperature)
+        self.self_supervise_weight = self_supervise_weight
+        self.consistency_weight = consistency_weight
 
-    def forward(self, g, h, y0, e=None, subsample=None):
-        """Forward pass.
-
-        Parameters
-        ----------
-        g : DGLGraph
-            The graph.
-
-        h : Tensor
-            The input features.
-
-        Returns
-        -------
-        h : Tensor
-            The output features.
+    def forward(self, x, edge_index, batch=None, e=None, consistency_weight=None, subsample=None):
         """
-        walks, eids = self.random_walk(
-            g=g, 
-            num_samples=self.num_samples, 
-            length=self.length,
-            subsample=subsample,
-        )
-        if self.directed:
-            walks = torch.where(
-                walks == -1,
-                walks[..., 0:1],
-                walks,
-            )
-
-        # walks = torch.zeros(1, 5000, 4).int().cuda()
-        # eids = None
-
-        uniqueness_walk = uniqueness(walks)
-        walks, uniqueness_walk = walks.flip(-1), uniqueness_walk.flip(-1)
-        uniqueness_walk = uniqueness_walk / uniqueness_walk.shape[-1]
-        uniqueness_walk = uniqueness_walk * math.pi * 2.0
-        uniqueness_walk = torch.cat(
-            [
-                uniqueness_walk.sin().unsqueeze(-1),
-                uniqueness_walk.cos().unsqueeze(-1),
-            ],
-            dim=-1,
-        )
-        h = h[walks]
-        num_directions = 2 if self.rnn_walk.bidirectional else 1
-        h0 = torch.zeros(self.rnn_walk.num_layers * num_directions, *h.shape[:-2], self.out_features, device=h.device)
-        y_walk, h_walk = self.rnn_walk(uniqueness_walk, h0)
-        h_walk = h_walk.mean(0, keepdim=True)
-        if self.rnn.num_layers > 1:
-            h_walk = h_walk.repeat(self.rnn.num_layers, 1, 1, 1)
-        if self.degrees:
-            degrees = g.in_degrees(walks.flatten()).float().reshape(*walks.shape).unsqueeze(-1)
-            degrees = degrees / degrees.max()
-            h = torch.cat([h, y_walk, degrees], dim=-1)
-        else:
-            h = torch.cat([h, y_walk], dim=-1)
-        # h = self.fc(h)
-        # h = self.activation(h)
-        if e is not None:
-            _h = torch.empty(
-                *h.shape[:-2],
-                2 * h.shape[-2] - 1,
-                h.shape[-1],
-                device=h.device,
-                dtype=h.dtype,
-            )
-            _h[..., ::2, :] = h
-            _h[..., 1::2, :] = self.fc_edge(e)[eids]
-            h = _h
-
-        y, h = self.rnn(h, h_walk)
-        if self.training and self.self_supervise:
-            if e is not None:
-                y = y[..., ::2, :]
-            loss = self.self_supervise(y, y0[walks])
-        else:
-            loss = 0.0
-        h = self.activation(h)
-        h = h.mean(0)
-        h = self.dropout(h)
+        参数:
+        x: 节点特征 [num_nodes, in_features]
+        edge_index: 边索引 [2, num_edges]
+        batch: (可选) 批次向量 [num_nodes], 用于图分类/回归任务
+        """
+        if consistency_weight is None:
+            consistency_weight = self.consistency_weight
+        
+        h0 = x # 保存原始特征
+        h = self.fc_in(x)
+        loss = 0.0
+        
+        for idx, layer in enumerate(self.layers):
+            if idx > 0:
+                # 假设 RUMLayer 返回 [samples, nodes, dim]，这里进行平均
+                h = h.mean(0)
+            
+            # RUMLayer 接口需要改为接收 edge_index 而不是 g
+            h, _loss = layer(edge_index, h, h0, e=e, subsample=subsample)
+            loss = loss + self.self_supervise_weight * _loss
+            
+        h = self.fc_out(h).softmax(-1)
+        
+        if self.training:
+            _loss = self.consistency(h)
+            _loss = _loss * consistency_weight
+            loss = loss + _loss
+            
         return h, loss
-    
-class Consistency(torch.nn.Module):
-    def __init__(self, temperature):
-        super().__init__()
-        self.temperature = temperature
 
-    def forward(self, probs):
-        avg_probs = probs.mean(0)
-        sharpened_probs = avg_probs.pow(1 / self.temperature)
-        sharpened_probs = sharpened_probs / sharpened_probs.sum(-1, keepdim=True)
-        loss = (sharpened_probs - avg_probs).pow(2).sum(-1).mean()
-        return loss
+class RUMGraphRegressionModel(RUMModel):
+    def __init__(self, *args, **kwargs):
+        # 确保 kwargs 中包含 dropout，或者设置默认值
+        dropout = kwargs.get("dropout", 0.0) 
+        super().__init__(*args, **kwargs)
 
-class SelfSupervise(torch.nn.Module):
-    def __init__(self, in_features, out_features, subsample=100, binary=True):
-        super().__init__()
-        self.fc = torch.nn.Linear(in_features, out_features)
-        self.subsample = subsample
-        self.binary = binary
+        self.fc_out = torch.nn.Sequential(
+            # torch.nn.BatchNorm1d(self.hidden_features),
+            self.activation,
+            torch.nn.Linear(self.hidden_features, self.hidden_features),
+            self.activation,
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(self.hidden_features, self.out_features),
+        )
 
-    def forward(self, y_hat, y):
-        idxs = torch.randint(high=y_hat.shape[-3], size=(self.subsample, ), device=y.device)
-        y, y_hat = y.flatten(0, -3), y_hat.flatten(0, -3)
-        y = y[..., idxs, 1:, :].contiguous()
-        y_hat = y_hat[..., idxs, :-1, :].contiguous()
-        y_hat = self.fc(y_hat)
-        if self.binary:
-            loss = torch.nn.BCEWithLogitsLoss(
-                pos_weight=y.detach().mean().pow(-1)
-            )(y_hat, y)
-        else:
-            # loss = torch.nn.CrossEntropyLoss()(y_hat, y)
-            loss = torch.nn.MSELoss()(y_hat, y)
-        return loss 
+    def forward(self, x, edge_index, batch=None, e=None, subsample=None):
+        h0 = x
+        h = self.fc_in(x)
+        loss = 0.0
+        
+        for idx, layer in enumerate(self.layers):
+            if idx > 0:
+                # 对应原代码中的 h = torch.nn.SiLU()(h)
+                h = F.silu(h) 
+                h = h.mean(0)
+            
+            # 同样，layer 需要适配接收 edge_index
+            h, _loss = layer(edge_index, h, h0, e=e, subsample=subsample)
+            loss = loss + self.self_supervise_weight * _loss
+        
+        # 处理最后一层的输出
+        h = h.mean(0)
+        
+        # --- 核心改动点 ---
+        # DGL: dgl.mean_nodes(g, "h")
+        # PyG: global_mean_pool(x, batch)
+        # 如果 batch 为 None (单图)，PyG 会默认处理为所有节点属于同一个图
+        h = global_mean_pool(h, batch)
+        
+        h = self.fc_out(h)
+        return h, loss
