@@ -1,4 +1,3 @@
-from functools import partial
 import torch
 
 class GRU(torch.nn.GRU):
