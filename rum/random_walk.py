@@ -1,7 +1,7 @@
 import torch
 from torch_cluster import random_walk as pyg_random_walk
 
-def uniform_random_walk_pyg(edge_index, num_nodes, num_samples, length, subsample=None):
+def uniform_random_walk(edge_index, num_nodes, num_samples, length, subsample=None):
     """
     Random walk on a graph using PyG (torch_cluster).
 
@@ -22,8 +22,6 @@ def uniform_random_walk_pyg(edge_index, num_nodes, num_samples, length, subsampl
     -------
     walks : Tensor
         The random walks. Shape: (num_samples, num_start_nodes, length)
-    eids : None
-        PyG efficient implementation does not return edge IDs by default.
     """
     device = edge_index.device
     
@@ -51,10 +49,7 @@ def uniform_random_walk_pyg(edge_index, num_nodes, num_samples, length, subsampl
     # 我们将其 reshape 为 [num_samples, num_nodes, length] 以匹配原代码逻辑
     walks = walks.view(num_samples, num_start_nodes, length)
     
-    # PyG 的 random_walk 不直接返回 edge_ids，通常返回 None 或者是为了保持接口一致
-    eids = None 
-    
-    return walks, eids
+    return walks
 
 # uniqueness 函数保持完全不变，因为它是纯 Tensor 操作
 def uniqueness(walk):
