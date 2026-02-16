@@ -40,8 +40,12 @@ class GNN(nn.Module):
             )
         elif self.backbone == 'gated_gcn':
             return ResGatedGraphConv(self.channels, self.channels, edge_dim=self.channels)
-        # elif self.backbone == 'gine':
-            # return GINEConv()
+        elif self.backbone == 'gine':
+            return GINEConv(nn.Sequential(
+                nn.Linear(self.channels, self.channels),
+                nn.LeakyReLU(),
+                nn.Linear(self.channels, self.channels),
+            ))
         else:
             raise Exception()
         
