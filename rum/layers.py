@@ -1,6 +1,6 @@
 import math
 import torch
-import dgl
+from torch_geometric.data import Data
 from .random_walk import uniform_random_walk, uniqueness
 from .rnn import GRU
 
@@ -51,13 +51,13 @@ class RUMLayer(torch.nn.Module):
         self.directed = directed
         self.degrees = degrees
 
-    def forward(self, g, h, y0, e=None, subsample=None):
+    def forward(self, data, h, y0, e=None, subsample=None):
         """Forward pass.
 
         Parameters
         ----------
-        g : DGLGraph
-            The graph.
+        data : torch_geometric.data.Data
+            The graph data.
 
         h : Tensor
             The input features.
@@ -68,7 +68,7 @@ class RUMLayer(torch.nn.Module):
             The output features.
         """
         walks, eids = self.random_walk(
-            g=g,
+            data,
             num_samples=self.num_samples,
             length=self.length,
             subsample=subsample,
@@ -107,12 +107,11 @@ class RUMLayer(torch.nn.Module):
         if self.rnn.num_layers > 1:
             h_walk = h_walk.repeat(self.rnn.num_layers, 1, 1, 1)
         if self.degrees:
-            degrees = (
-                g.in_degrees(walks.flatten())
-                .float()
-                .reshape(*walks.shape)
-                .unsqueeze(-1)
-            )
+            # PyG: 计算入度
+            edge_index = data.edge_index
+            num_nodes = data.num_nodes
+            node_degrees = torch.bincount(edge_index[1], minlength=num_nodes)
+            degrees = node_degrees[walks.flatten()].float().reshape(*walks.shape).unsqueeze(-1)
             degrees = degrees / degrees.max()
             h = torch.cat([h, y_walk, degrees], dim=-1)
         else:

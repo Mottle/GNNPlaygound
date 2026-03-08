@@ -1,8 +1,8 @@
 from re import sub
 from typing import Callable
 import torch
-import dgl
-from dgl.nn import GlobalAttentionPooling
+from torch_geometric.data import Data
+from torch_geometric.nn import global_mean_pool, global_add_pool
 from .layers import RUMLayer, Consistency
 
 
@@ -36,8 +36,7 @@ class RUMModel(torch.nn.Module):
         self.self_supervise_weight = self_supervise_weight
         self.consistency_weight = consistency_weight
 
-    def forward(self, g, h, e=None, consistency_weight=None, subsample=None):
-        g = g.local_var()
+    def forward(self, data, h, e=None, consistency_weight=None, subsample=None):
         if consistency_weight is None:
             consistency_weight = self.consistency_weight
         h0 = h
@@ -46,7 +45,7 @@ class RUMModel(torch.nn.Module):
         for idx, layer in enumerate(self.layers):
             if idx > 0:
                 h = h.mean(0)
-            h, _loss = layer(g, h, h0, e=e, subsample=subsample)
+            h, _loss = layer(data, h, h0, e=e, subsample=subsample)
             loss = loss + self.self_supervise_weight * _loss
         h = self.fc_out(h).softmax(-1)
         if self.training:
@@ -69,8 +68,7 @@ class RUMGraphRegressionModel(RUMModel):
             torch.nn.Linear(self.hidden_features, self.out_features),
         )
 
-    def forward(self, g, h, e=None, subsample=None):
-        g = g.local_var()
+    def forward(self, data, h, e=None, subsample=None):
         h0 = h
         h = self.fc_in(h)
         loss = 0.0
@@ -79,12 +77,12 @@ class RUMGraphRegressionModel(RUMModel):
                 # h = torch.nn.functional.tanh(h)
                 h = torch.nn.SiLU()(h)
                 h = h.mean(0)
-            h, _loss = layer(g, h, h0, e=e, subsample=subsample)
+            h, _loss = layer(data, h, h0, e=e, subsample=subsample)
             loss = loss + self.self_supervise_weight * _loss
         # h = self.activation(h)
         h = h.mean(0)
-        g.ndata["h"] = h
-        # h = dgl.sum_nodes(g, "h")
-        h = dgl.mean_nodes(g, "h")
+        # PyG: batch 必须存在
+        if hasattr(data, "batch"):
+            h = global_mean_pool(h, data.batch)
         h = self.fc_out(h)
         return h, loss

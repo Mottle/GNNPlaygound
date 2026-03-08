@@ -1,16 +1,16 @@
-import dgl
+from torch_geometric.utils import random_walk
 import torch
 from functools import partial
 
 
-def uniform_random_walk(g, num_samples, length, subsample=None):
+def uniform_random_walk(data, num_samples, length, subsample=None):
     """
     Random walk on a graph.
 
     Parameters
     ----------
-    g : DGLGraph
-        The graph.
+    data : torch_geometric.data.Data
+        The graph data.
     num_samples : int
         Number of random walks per node.
     length : int
@@ -21,19 +21,18 @@ def uniform_random_walk(g, num_samples, length, subsample=None):
     walks : Tensor
         The random walks.
     """
+    edge_index = data.edge_index
     if subsample is None:
-        nodes = g.nodes()
-        num_nodes = g.number_of_nodes()
+        nodes = torch.arange(data.num_nodes)
+        num_nodes = data.num_nodes
         nodes = nodes.repeat(num_samples)
     else:
         nodes = subsample.repeat(num_samples)
         num_nodes = subsample.size(0)
-    walks, eids, _ = dgl.sampling.random_walk(
-        g=g, nodes=nodes, length=length - 1, return_eids=True
-    )
+    walks = random_walk(edge_index, nodes, walk_length=length)
     walks = walks.view(num_samples, num_nodes, length)
-    eids = eids.view(num_samples, num_nodes, length - 1)
-    return walks, eids
+    # PyG random_walk 不返回 eids，保持接口一致返回 None
+    return walks, None
 
 
 # @torch.jit.trace(example_inputs=(torch.zeros(10, 10, 10)))
