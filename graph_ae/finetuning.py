@@ -251,7 +251,7 @@ def main(cfg):
         hidden_channels=cfg.model.hidden_dim,
         num_gnn_layers=cfg.model.num_gnn_layers,
         backbone=cfg.model.backbone,
-        norm = cfg.model.norm,
+        norm=cfg.model.norm,
         num_tasks=dataset.y.shape[1],
         dropout=cfg.model.dropout,
     ).to(DEVICE)

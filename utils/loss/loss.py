@@ -1,5 +1,6 @@
 import torch.nn.functional as F
 
+
 def sce_loss(h_hat, h_target, alpha=2.0):
     """
     Scaled Cosine Error: 针对隐向量重建的鲁棒损失

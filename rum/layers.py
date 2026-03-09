@@ -111,7 +111,12 @@ class RUMLayer(torch.nn.Module):
             edge_index = data.edge_index
             num_nodes = data.num_nodes
             node_degrees = torch.bincount(edge_index[1], minlength=num_nodes)
-            degrees = node_degrees[walks.flatten()].float().reshape(*walks.shape).unsqueeze(-1)
+            degrees = (
+                node_degrees[walks.flatten()]
+                .float()
+                .reshape(*walks.shape)
+                .unsqueeze(-1)
+            )
             degrees = degrees / degrees.max()
             h = torch.cat([h, y_walk, degrees], dim=-1)
         else:
