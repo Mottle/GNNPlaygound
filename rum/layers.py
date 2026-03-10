@@ -1,6 +1,5 @@
 import math
 import torch
-from torch_geometric.data import Data
 from .random_walk import uniform_random_walk, uniqueness
 from .rnn import GRU
 
@@ -43,7 +42,7 @@ class RUMLayer(torch.nn.Module):
         self.dropout = torch.nn.Dropout(dropout)
         if self_supervise:
             self.self_supervise = SelfSupervise(
-                in_features, original_features, binary=binary
+                out_features, original_features, binary=binary
             )
         else:
             self.self_supervise = None

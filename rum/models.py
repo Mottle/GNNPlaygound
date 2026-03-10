@@ -1,8 +1,7 @@
 from re import sub
 from typing import Callable
 import torch
-from torch_geometric.data import Data
-from torch_geometric.nn import global_mean_pool, global_add_pool
+from torch_geometric.nn import global_mean_pool
 from .layers import RUMLayer, Consistency
 
 
