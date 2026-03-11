@@ -1,11 +1,14 @@
 import torch
-import dgl
+from torch_geometric.data import Data
 
 
 def test_model_forward():
     from rum.models import RUMModel
 
-    g = dgl.graph(([0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 0]))
+    edge_index = torch.tensor(
+        [[0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 0]], dtype=torch.long
+    )
+    data = Data(edge_index=edge_index, num_nodes=6)
     model = RUMModel(
         in_features=16,
         out_features=8,
@@ -15,5 +18,5 @@ def test_model_forward():
         length=3,
     )
     h = torch.ones(6, 16)
-    h = model(g, h)
-    assert h.shape == (6, 8)
+    out, loss = model(data, h)
+    assert out.shape[-1] == 8
