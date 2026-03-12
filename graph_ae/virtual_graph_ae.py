@@ -13,7 +13,7 @@ class VirtualNodeGraphAE(nn.Module):
         hidden_channels: int,
         num_gnn_layers: int = 3,
         backbone: str = ["gcn", "gin", "gat"],
-        norm: str = ["gcn", "gin", "gat"],
+        norm: str = ["layer_norm", "batch_norm", "graph_norm"],
         dropout: float = 0.2,
         num_atom_features: Optional[int] = None,
         num_bond_features: Optional[int] = None,
