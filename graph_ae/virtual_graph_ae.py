@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from graph_ae.gnn import GNN
 from typing import Optional
+from rum.models import RUMModel
 
 
 class VirtualNodeGraphAE(nn.Module):
@@ -12,7 +13,7 @@ class VirtualNodeGraphAE(nn.Module):
         in_channels: int,
         hidden_channels: int,
         num_gnn_layers: int = 3,
-        backbone: str = ["gcn", "gin", "gat"],
+        backbone: str = ["gcn", "gin", "gat", "rum"],
         norm: str = ["layer_norm", "batch_norm", "graph_norm"],
         dropout: float = 0.2,
         num_atom_features: Optional[int] = None,
@@ -26,21 +27,43 @@ class VirtualNodeGraphAE(nn.Module):
         self.dropout = dropout
         self.mask_ratio = mask_ratio
 
-        self.encoder = GNN(
-            hidden_channels,
-            num_gnn_layers,
-            backbone=backbone,
-            dropout=dropout,
-            norm=norm,
-        )
+        if backbone == "rum":
+            self.encoder = RUMModel(
+                in_features=hidden_channels,
+                out_features=hidden_channels,
+                hidden_features=hidden_channels,
+                edge_features=hidden_channels,
+                depth=num_gnn_layers,
+                num_samples=2,
+                length=3,
+                dropout=dropout,
+                binary=False,
+            )
+        else:
+            self.encoder = GNN(
+                hidden_channels,
+                num_gnn_layers,
+                backbone=backbone,
+                dropout=dropout,
+                norm=norm,
+            )
 
-        self.decoder = GNN(
-            hidden_channels,
-            num_gnn_layers,
-            backbone=backbone,
-            dropout=dropout,
-            norm=norm,
-        )
+        if backbone == "rum":
+            self.decoder = GNN(
+                hidden_channels,
+                num_gnn_layers,
+                backbone="gine",
+                dropout=dropout,
+                norm=norm,
+            )
+        else:
+            self.decoder = GNN(
+                hidden_channels,
+                num_gnn_layers,
+                backbone=backbone,
+                dropout=dropout,
+                norm=norm,
+            )
 
         # 虚拟节点的可学习初始向量 (替代全0)
         self.virtual_embedding = nn.Embedding(1, hidden_channels)
@@ -65,7 +88,11 @@ class VirtualNodeGraphAE(nn.Module):
     def forward(self, data):
         x = data.x
         batch = data.batch
-        masked_x, _ = mask_nodes(x, batch, self.mask_ratio)
+
+        if self.mask_ratio > 0:
+            masked_x, _ = mask_nodes(x, batch, self.mask_ratio)
+        else:
+            masked_x = x
 
         edge_index_enc = data.edge_index_enc
         edge_index_dec = data.edge_index_dec
@@ -93,7 +120,11 @@ class VirtualNodeGraphAE(nn.Module):
         # -------------------------
         # 此时 edge_index_enc 混合了局部连接和全局汇聚
         # 经过 num_layers 层后，h[mask] 里的特征已经聚合了全图信息
-        z_all = self.encoder(h, edge_index_enc, h_bond_enc)
+        if self.backbone == "rum":
+            z_all, ss_loss = self.encoder(data, h, e=h_bond_enc)
+            z_all = z_all.mean(dim=0)
+        else:
+            z_all = self.encoder(h, edge_index_enc, h_bond_enc)
 
         # 提取 Latent Code (只取虚拟节点部分)
         z = z_all[mask]  # [Batch, Hidden]
@@ -115,7 +146,7 @@ class VirtualNodeGraphAE(nn.Module):
         out = self.classifier(recon_features)
 
         # 返回 (预测的原节点, 真实的原节点)
-        return z, out[~mask], data.x[~mask]
+        return z, out[~mask], data.x[~mask], ss_loss if self.backbone == "rum" else 0.0
 
 
 def mask_nodes(x, batch, mask_ratio=0.15):

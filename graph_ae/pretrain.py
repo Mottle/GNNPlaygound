@@ -65,9 +65,9 @@ def train_epoch(loader, optimizer, model, device):
         optimizer.zero_grad()
 
         # Forward
-        z, pred, target = model(data)
+        z, pred, target, add_loss = model(data)
 
-        loss = F.cross_entropy(pred, target)
+        loss = F.cross_entropy(pred, target) + add_loss
 
         loss.backward()
         clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -111,6 +111,7 @@ def main(cfg):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # print(f"mask {cfg.model.masked_ratio}")
     # 使用 cfg 参数初始化模型
     model = VirtualNodeGraphAE(
         in_channels=dataset.num_features,  # 假设第一个参数是 input_channels
