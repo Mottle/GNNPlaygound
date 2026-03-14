@@ -21,7 +21,7 @@ model:
   hidden_dim: 256
   backbone: rum
   norm: layer_norm
-  num_gnn_layers: 2
+  num_gnn_layers: 5
   dropout: 0.5
   masked_ratio: 0.0
 
