@@ -4,6 +4,8 @@ import torch
 from torch_geometric.nn import global_mean_pool
 from .layers import RUMLayer, Consistency
 
+# from utils.perf_counter import perf_counter
+
 
 class RUMModel(torch.nn.Module):
     def __init__(
@@ -36,21 +38,36 @@ class RUMModel(torch.nn.Module):
         self.consistency_weight = consistency_weight
 
     def forward(self, data, h, e=None, consistency_weight=None, subsample=None):
+        # t_s = perf_counter()
+
         if consistency_weight is None:
             consistency_weight = self.consistency_weight
+
         h0 = h
         h = self.fc_in(h)
         loss = 0.0
+
+        # t_layers_s = perf_counter()
         for idx, layer in enumerate(self.layers):
             if idx > 0:
                 h = h.mean(0)
             h, _loss = layer(data, h, h0, e=e, subsample=subsample)
             loss = loss + self.self_supervise_weight * _loss
+        # t_layers_e = perf_counter()
+
         h = self.fc_out(h).softmax(-1)
+
+        # t_ss_s = perf_counter()
         if self.training:
             _loss = self.consistency(h)
             _loss = _loss * consistency_weight
             loss = loss + _loss
+        # t_ss_e = perf_counter()
+
+        # t_e = perf_counter()
+        # print(f"Total forward time: {t_e - t_s:.4f} seconds")
+        # print(f"  Layers time: {t_layers_e - t_layers_s:.4f} seconds, percentage: {(t_layers_e - t_layers_s) / (t_e - t_s) * 100:.2f}%")
+        # print(f"  Consistency time: {t_ss_e - t_ss_s:.4f} seconds, percentage: {(t_ss_e - t_ss_s) / (t_e - t_s) * 100:.2f}%")
         return h, loss
 
 

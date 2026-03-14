@@ -6,6 +6,8 @@ from graph_ae.gnn import GNN
 from typing import Optional
 from rum.models import RUMModel
 
+# from utils.perf_counter import perf_counter
+
 
 class VirtualNodeGraphAE(nn.Module):
     def __init__(
@@ -86,6 +88,8 @@ class VirtualNodeGraphAE(nn.Module):
             self.decoder.save(f"{path}decoder.pth")
 
     def forward(self, data):
+        # t_s = perf_counter()
+
         x = data.x
         batch = data.batch
 
@@ -121,8 +125,11 @@ class VirtualNodeGraphAE(nn.Module):
         # 此时 edge_index_enc 混合了局部连接和全局汇聚
         # 经过 num_layers 层后，h[mask] 里的特征已经聚合了全图信息
         if self.backbone == "rum":
+            # t1 = perf_counter()
             z_all, ss_loss = self.encoder(data, h, e=h_bond_enc)
             z_all = z_all.mean(dim=0)
+            # t2 = perf_counter()
+            # print(f"RUM Encoder Time: {t2 - t1:.4f} seconds")
         else:
             z_all = self.encoder(h, edge_index_enc, h_bond_enc)
 
@@ -145,6 +152,8 @@ class VirtualNodeGraphAE(nn.Module):
         recon_features = self.decoder(h_decode, edge_index_dec, h_bond_dec)
         out = self.classifier(recon_features)
 
+        # t_e = perf_counter()
+        # print(f"Total Forward Time: {t_e - t_s:.4f} seconds")
         # 返回 (预测的原节点, 真实的原节点)
         return z, out[~mask], data.x[~mask], ss_loss if self.backbone == "rum" else 0.0
 

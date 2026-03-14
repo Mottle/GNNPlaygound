@@ -3,6 +3,8 @@ import torch
 from .random_walk import uniform_random_walk, uniqueness
 from .rnn import GRU
 
+# from utils.perf_counter import perf_counter
+
 
 class RUMLayer(torch.nn.Module):
     def __init__(
@@ -66,12 +68,18 @@ class RUMLayer(torch.nn.Module):
         h : Tensor
             The output features.
         """
+        # t_s = perf_counter()
+
+        # t_rw_s = perf_counter()
         walks, eids = self.random_walk(
             data,
             num_samples=self.num_samples,
             length=self.length,
             subsample=subsample,
         )
+        # t_rw_e = perf_counter()
+        # print(f"Random walk time: {t_rw_e - t_rw_s:.4f} seconds")
+
         if self.directed:
             walks = torch.where(
                 walks == -1,
@@ -84,6 +92,7 @@ class RUMLayer(torch.nn.Module):
 
         uniqueness_walk = uniqueness(walks)
         walks, uniqueness_walk = walks.flip(-1), uniqueness_walk.flip(-1)
+
         uniqueness_walk = uniqueness_walk / uniqueness_walk.shape[-1]
         uniqueness_walk = uniqueness_walk * math.pi * 2.0
         uniqueness_walk = torch.cat(
@@ -96,7 +105,8 @@ class RUMLayer(torch.nn.Module):
 
         # h = h[walks]
 
-        # === 修复: 节点特征的 -1 索引处理 ===
+        # t_node_s = perf_counter()
+        # === 节点特征的 -1 索引处理 ===
         # 1. 创建一个全 0 的 Dummy 节点特征
         dummy_node = torch.zeros(1, h.size(-1), device=h.device, dtype=h.dtype)
         # 2. 将 Dummy 节点拼接到原节点特征矩阵的最后
@@ -123,40 +133,79 @@ class RUMLayer(torch.nn.Module):
 
         if self.rnn.num_layers > 1:
             h_walk = h_walk.repeat(self.rnn.num_layers, 1, 1, 1)
+        # t_node_e = perf_counter()
+        # print(f"Node feature processing time: {t_node_e - t_node_s:.4f} seconds")
+
+        # t_deg_s = perf_counter()
+        # if self.degrees:
+        #     # PyG: 计算入度
+        #     edge_index = data.edge_index
+        #     num_nodes = data.num_nodes
+        #     node_degrees = torch.bincount(edge_index[1], minlength=num_nodes)
+
+        #     dummy_degree = torch.zeros(
+        #         1, device=node_degrees.device, dtype=node_degrees.dtype
+        #     )
+        #     node_degrees_padded = torch.cat([node_degrees, dummy_degree], dim=0)
+
+        #     # degrees = (
+        #     #     node_degrees[walks.flatten()]
+        #     #     .float()
+        #     #     .reshape(*walks.shape)
+        #     #     .unsqueeze(-1)
+        #     # )
+
+        #     degrees = (
+        #         node_degrees_padded[walks_safe.flatten()]
+        #         .float()
+        #         .reshape(*walks_safe.shape)
+        #         .unsqueeze(-1)
+        #     )
+
+        #     # degrees = degrees / degrees.max()
+        #     degrees = degrees / (
+        #         degrees.max() + 1e-9
+        #     )  # 添加 epsilon 防止图中所有节点度数均为 0 时发生除零错误
+
+        #     h = torch.cat([h, y_walk, degrees], dim=-1)
+        # else:
+        #     h = torch.cat([h, y_walk], dim=-1)
 
         if self.degrees:
-            # PyG: 计算入度
-            edge_index = data.edge_index
-            num_nodes = data.num_nodes
-            node_degrees = torch.bincount(edge_index[1], minlength=num_nodes)
+            # 缓存全局度数与预归一化
+            if not hasattr(data, "_padded_degrees_norm"):
+                edge_index = data.edge_index
+                num_nodes = data.num_nodes
 
-            dummy_degree = torch.zeros(
-                1, device=node_degrees.device, dtype=node_degrees.dtype
-            )
-            node_degrees_padded = torch.cat([node_degrees, dummy_degree], dim=0)
+                # 计算原始度数
+                node_degrees = torch.bincount(
+                    edge_index[1], minlength=num_nodes
+                ).float()
 
-            # degrees = (
-            #     node_degrees[walks.flatten()]
-            #     .float()
-            #     .reshape(*walks.shape)
-            #     .unsqueeze(-1)
-            # )
+                # 预先除以全局最大值完成归一化 (比在庞大的游走张量上求 max 快几个数量级)
+                max_deg = node_degrees.max() + 1e-9
+                node_degrees_norm = node_degrees / max_deg
 
-            degrees = (
-                node_degrees_padded[walks_safe.flatten()]
-                .float()
-                .reshape(*walks_safe.shape)
-                .unsqueeze(-1)
-            )
+                # 追加 Dummy 节点 (度数保持为0)，并缓存在 data 中
+                dummy_degree = torch.zeros(
+                    1, device=node_degrees.device, dtype=node_degrees.dtype
+                )
+                data._padded_degrees_norm = torch.cat(
+                    [node_degrees_norm, dummy_degree], dim=0
+                )
 
-            # degrees = degrees / degrees.max()
-            degrees = degrees / (
-                degrees.max() + 1e-9
-            )  # 添加 epsilon 防止图中所有节点度数均为 0 时发生除零错误
+            # === O(1)索引 ===
+            # PyTorch 原生支持多维索引：直接传入 walks_safe，
+            # 输出的形状天然就是 (*walks_safe.shape)，无需 flatten 和 reshape
+            degrees = data._padded_degrees_norm[walks_safe].unsqueeze(-1)
 
             h = torch.cat([h, y_walk, degrees], dim=-1)
         else:
             h = torch.cat([h, y_walk], dim=-1)
+
+        # t_deg_e = perf_counter()
+        # print(f"Degree calculation time: {t_deg_e - t_deg_s:.4f} seconds")
+
         # h = self.fc(h)
         # h = self.activation(h)
 
@@ -214,6 +263,9 @@ class RUMLayer(torch.nn.Module):
         h = self.activation(h)
         h = h.mean(0)
         h = self.dropout(h)
+
+        # t_e = perf_counter()
+        # print(f"RUMLayer forward time: {t_e - t_s:.4f} seconds")
 
         return h, loss
 
