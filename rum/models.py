@@ -37,6 +37,51 @@ class RUMModel(torch.nn.Module):
         self.self_supervise_weight = self_supervise_weight
         self.consistency_weight = consistency_weight
 
+    def save(self, path: str):
+        print(f"Saving RUM to {path}...")
+        torch.save(self.state_dict(), path)
+
+    def load(self, path: str, device=None):
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        print(f"Loading GNN from {path}...")
+        loaded_state_dict = torch.load(path, map_location=device)
+        model_state_dict = self.state_dict()
+
+        total_layers = len(model_state_dict)
+        matched_layers = 0
+
+        for key, param in model_state_dict.items():
+            # 检查 key 是否存在 且 形状是否一致
+            if key in loaded_state_dict and loaded_state_dict[key].shape == param.shape:
+                matched_layers += 1
+
+        ratio = (matched_layers / total_layers) * 100 if total_layers > 0 else 0
+
+        print(f"📊 Parameter Loading Report:")
+        print(f"   - Total Layers in Model: {total_layers}")
+        print(f"   - Matched Layers found:  {matched_layers}")
+        print(f"   - Success Rate:          {ratio:.2f}%")
+
+        # 建议改为 strict=False，这样即使不是 100% 也能加载成功，而不是直接报错
+        missing_keys, unexpected_keys = self.load_state_dict(
+            loaded_state_dict, strict=True
+        )
+
+        if len(missing_keys) > 0:
+            print(
+                f"⚠️  Warning: {len(missing_keys)} layers were missing and not loaded."
+            )
+            print(f"Missing: {missing_keys}")  # 需要详细信息时取消注释
+
+        if len(unexpected_keys) > 0:
+            print(
+                f"⚠️  Warning: {len(unexpected_keys)} extra layers in file were ignored."
+            )
+
+        print("GNN weights load process completed.")
+
     def forward(self, data, h, e=None, consistency_weight=None, subsample=None):
         # t_s = perf_counter()
 

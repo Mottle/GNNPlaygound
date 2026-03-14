@@ -16,6 +16,7 @@ from utils.scaffold import scaffold_split
 from utils.seed_manual import seed_everything
 from graph_ae.virtual_graph_ae import GNN
 from graph_ae.virtual_node_pre_transform import AddVirtualNode
+from rum.models import RUMModel
 
 
 def get_cfg_defaults():
@@ -104,6 +105,8 @@ class FineTuningModel(nn.Module):
     ):
         super().__init__()
 
+        self.backbone = backbone
+
         self.atom_embedding = nn.Embedding(num_atom_types, hidden_channels)
         self.extra_feature_proj = nn.Linear(num_node_features - 1, hidden_channels)
 
@@ -124,13 +127,26 @@ class FineTuningModel(nn.Module):
 
         self.virtual_embedding = nn.Embedding(1, hidden_channels)
 
-        self.encoder = GNN(
-            hidden_channels,
-            num_gnn_layers,
-            backbone=backbone,
-            dropout=dropout,
-            norm=norm,
-        )
+        if backbone == "rum":
+            self.encoder = RUMModel(
+                in_features=hidden_channels,
+                out_features=hidden_channels,
+                hidden_features=hidden_channels,
+                edge_features=hidden_channels,
+                depth=num_gnn_layers,
+                num_samples=3,
+                length=5,
+                dropout=dropout,
+                binary=False,
+            )
+        else:
+            self.encoder = GNN(
+                hidden_channels,
+                num_gnn_layers,
+                backbone=backbone,
+                dropout=dropout,
+                norm=norm,
+            )
 
         self.classifier_head = nn.Sequential(
             nn.Linear(hidden_channels, hidden_channels * 2),
@@ -191,7 +207,13 @@ class FineTuningModel(nn.Module):
             h[mask] = self.virtual_embedding.weight.repeat(num_virtual, 1)
 
         # === 步骤 E: 编码与分类 ===
-        z_all = self.encoder(h, edge_index_enc, edge_attr)
+
+        if self.backbone == "rum":
+            z_all, ss_loss = self.encoder(data, h, e=h_bond_extra)
+            z_all = z_all.mean(dim=0)
+        else:
+            z_all = self.encoder(h, edge_index_enc, edge_attr)
+
         z = z_all[mask]
         return self.classifier_head(z)
 

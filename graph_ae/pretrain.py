@@ -183,6 +183,9 @@ def main(cfg):
                 }
             )
 
+        if epoch % 10 == 0:
+            model.save_encoder_and_decoder(path="./graph_ae/saved/")
+
     model.save_encoder_and_decoder(path="./graph_ae/saved/")
 
     if cfg.wandb.use:
