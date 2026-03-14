@@ -36,8 +36,8 @@ class VirtualNodeGraphAE(nn.Module):
                 hidden_features=hidden_channels,
                 edge_features=hidden_channels,
                 depth=num_gnn_layers,
-                num_samples=2,
-                length=3,
+                num_samples=3,
+                length=5,
                 dropout=dropout,
                 binary=False,
             )
