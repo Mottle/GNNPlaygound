@@ -16,6 +16,7 @@ from tu.classifier import Classifier
 from torch_geometric.datasets import TUDataset
 from rum.models import RUMModel
 from torch_geometric.nn import global_add_pool
+from pag.model import PathAttentionGraphormer
 
 # from baseline import BaseLine
 
@@ -33,6 +34,23 @@ class RUMWrapper(nn.Module):
         h = wk_h.mean(0)
         out = global_add_pool(h, data.batch)
         return out, loss
+
+
+class PAGWrapper(nn.Module):
+    def __init__(
+        self, in_channels: int, hid_channels: int, pag_model: PathAttentionGraphormer
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.pag_model = pag_model
+        self.encoder = nn.Linear(in_channels, hid_channels)
+        self.post_lin = nn.Linear(2 * hid_channels, hid_channels)
+
+    def forward(self, data):
+        h = self.encoder(data.x)
+        data.h = h
+        out, h, attn_w, loss = self.pag_model(data)
+        return self.post_lin(out), h, attn_w, loss
 
 
 def compute_loss(loss1, loss2):
@@ -111,8 +129,11 @@ def train_model(
 
         # 2. 前向传播使用 autocast 上下文
         with torch.amp.autocast(device_type=device_type, enabled=use_amp):
-            pe = data.pe if hasattr(data, "pe") else None
-            pooled, additional_loss = pooler(data)
+            if config.model == "rum":
+                pooled, additional_loss = pooler(data)
+            elif config.model == "pag":
+                pooled, h, attn_w, additional_loss = pooler(data)
+
             pooled = torch.nan_to_num(pooled, nan=0.0, posinf=0.0, neginf=0.0)
             out = classifier(pooled)
             loss = compute_loss(criterion(out, data.y), additional_loss)
@@ -199,8 +220,11 @@ def test_model(pooler, classifier, test_loader, criterion, device, use_amp=False
 
             # 在推理阶段也开启 autocast 以保持精度/性能策略与训练一致
             with torch.amp.autocast(device_type=device_type, enabled=use_amp):
-                pe = data.pe if hasattr(data, "pe") else None
-                pooled, additional_loss = pooler(data)
+                if config.model == "rum":
+                    pooled, additional_loss = pooler(data)
+                elif config.model == "pag":
+                    pooled, h, attn_w, additional_loss = pooler(data)
+
                 pooled = torch.nan_to_num(pooled, nan=0.0, posinf=0.0, neginf=0.0)
                 out = classifier(pooled)
                 loss = compute_loss(criterion(out, data.y), additional_loss)
@@ -334,6 +358,18 @@ def build_models(num_node_features, num_classes, config: BenchmarkConfig):
             binary=False,
         )
         model = RUMWrapper(input_dim, hidden_dim, rum).to(run_device)
+    elif model_type == "pag":
+        pag = PathAttentionGraphormer(
+            channels=hidden_dim,
+            num_rw_layers=num_layers,
+            num_global_encoder_layers=num_layers,
+            num_rw_samples=3,
+            num_rw_length=5,
+            rw_dropout=dropout,
+            global_encoder_dropout=dropout,
+            attention_dropout=dropout,
+        ).to(run_device)
+        model = PAGWrapper(input_dim, hidden_dim, pag).to(run_device)
 
     classifier = Classifier(hidden_dim, hidden_dim, num_classes).to(run_device)
 
@@ -640,7 +676,7 @@ if __name__ == "__main__":
     config.kfold = 10
 
     models = [
-        "rum",
+        "pag",
     ]
     # models = ['topk']
     seeds = [0, 114514, 1919810, 77777]
