@@ -44,7 +44,7 @@ class PAGWrapper(nn.Module):
         self.in_channels = in_channels
         self.pag_model = pag_model
         self.encoder = nn.Linear(in_channels, hid_channels)
-        self.post_lin = nn.Linear(2 * hid_channels, hid_channels)
+        self.post_lin = nn.Linear(hid_channels, hid_channels)
 
     def forward(self, data):
         h = self.encoder(data.x)
@@ -364,7 +364,7 @@ def build_models(num_node_features, num_classes, config: BenchmarkConfig):
             num_rw_layers=num_layers,
             num_global_encoder_layers=num_layers,
             num_rw_samples=3,
-            num_rw_length=5,
+            num_rw_length=None,
             rw_dropout=dropout,
             global_encoder_dropout=dropout,
             attention_dropout=dropout,
