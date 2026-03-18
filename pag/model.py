@@ -5,6 +5,7 @@ from torch.nn import Module
 from rum.models import RUMModel
 from graph_ae.gnn import GNN
 from torch_geometric.nn import global_mean_pool
+from pag.path_attention import PathAttention, LocalPathAttention
 
 # class PreEncoder(nn.Module):
 #     def __init__(self, in_channels: int, out_channels: int):
@@ -142,18 +143,18 @@ class PathAttentionGraphormer(Module):
             )
 
             rw_global_features, loss_rw = self.forward_rw(data, idx)
-            attn_rw_features, attn_weights, attn_entropy_loss = self.path_attentions[
+            attn_rw_feature, attn_weights, attn_entropy_loss = self.path_attentions[
                 idx
             ](global_encoder_feature, rw_global_features, data.batch)
-            attn_rw_global_feature = global_mean_pool(attn_rw_features, data.batch)
 
+            rw_global_features = rw_global_features.sum(dim=0)
             data.h = self.node_compress_linears[idx](
-                torch.cat([global_encoder_features, attn_rw_features], dim=-1)
+                torch.cat([global_encoder_features, rw_global_features], dim=-1)
             )
 
             fused_global_feature = fused_global_feature + self.feature_compress_linears[
                 idx
-            ](torch.cat([global_encoder_feature, attn_rw_global_feature], dim=-1))
+            ](torch.cat([global_encoder_feature, attn_rw_feature], dim=-1))
 
             loss = loss + loss_global + loss_rw + attn_entropy_loss
 
