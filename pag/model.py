@@ -5,17 +5,9 @@ from torch.nn import Module
 from rum.models import RUMModel
 from graph_ae.gnn import GNN
 from torch_geometric.nn import global_mean_pool
-from pag.path_attention import PathAttention, LocalPathAttention
-
-# class PreEncoder(nn.Module):
-#     def __init__(self, in_channels: int, out_channels: int):
-#         super().__init__()
-#         self.linear = nn.Linear(in_channels, out_channels)
-
-#     def forward(self, data):
-#         if hasattr(data, "h"):
-#             return data.h
-#         return self.linear(data.x)
+from pag.connection import HyperConnection
+from pag.block import PathAttentionBlock
+from torch.nn import LayerNorm
 
 
 class PathAttentionGraphormer(Module):
@@ -38,124 +30,63 @@ class PathAttentionGraphormer(Module):
         self.global_encoder_dropout = global_encoder_dropout
         self.attention_dropout = attention_dropout
 
-        self.local_encoders = nn.ModuleList(
-            [
-                RUMModel(
-                    in_features=channels,
-                    out_features=channels,
-                    hidden_features=channels,
-                    edge_features=channels,
-                    depth=3,
-                    num_samples=num_rw_samples,
-                    length=2,
-                    dropout=rw_dropout,
-                    binary=False,
-                ),
-                RUMModel(
-                    in_features=channels,
-                    out_features=channels,
-                    hidden_features=channels,
-                    edge_features=channels,
-                    depth=2,
-                    num_samples=num_rw_samples,
-                    length=4,
-                    dropout=rw_dropout,
-                    binary=False,
-                ),
-                RUMModel(
-                    in_features=channels,
-                    out_features=channels,
-                    hidden_features=channels,
-                    edge_features=channels,
-                    depth=2,
-                    num_samples=num_rw_samples,
-                    length=8,
-                    dropout=rw_dropout,
-                    binary=False,
-                ),
-            ]
+        # self.layer_norm0 = LayerNorm()
+        # self.layer_norm1 = LayerNorm()
+        # self.layer_norm2 = LayerNorm()
+
+        self.pab0 = PathAttentionBlock(
+            channels,
+            num_me_layers=2,
+            num_le_depth=2,
+            num_le_samples=5,
+            le_rw_length=2,
+            me_dropout=0.2,
+            le_dropout=0.2,
+            pa_dropout=0.4,
+        )
+        self.pab1 = PathAttentionBlock(
+            channels,
+            num_me_layers=2,
+            num_le_depth=2,
+            num_le_samples=5,
+            le_rw_length=4,
+            me_dropout=0.2,
+            le_dropout=0.2,
+            pa_dropout=0.4,
+        )
+        self.pab2 = PathAttentionBlock(
+            channels,
+            num_me_layers=1,
+            num_le_depth=1,
+            num_le_samples=3,
+            le_rw_length=8,
+            me_dropout=0.2,
+            le_dropout=0.2,
+            pa_dropout=0.4,
         )
 
-        self.global_encoders = nn.ModuleList(
-            [
-                GNN(
-                    channels,
-                    num_global_encoder_layers // 3 + 1,
-                    backbone="gin",
-                    dropout=global_encoder_dropout,
-                    norm="layer_norm",
-                ),
-                GNN(
-                    channels,
-                    num_global_encoder_layers // 3 + 1,
-                    backbone="gin",
-                    dropout=global_encoder_dropout,
-                    norm="layer_norm",
-                ),
-                GNN(
-                    channels,
-                    num_global_encoder_layers // 3,
-                    backbone="gin",
-                    dropout=global_encoder_dropout,
-                    norm="layer_norm",
-                ),
-            ]
-        )
+        self.hc0 = HyperConnection(channels, 4)
+        self.hc1 = HyperConnection(channels, 4)
+        # self.hc2 = HyperConnection(channels, 4)
 
-        self.path_attentions = nn.ModuleList(
-            [
-                PathAttention(channels, attention_dropout),
-                PathAttention(channels, attention_dropout),
-                PathAttention(channels, attention_dropout),
-            ]
-        )
-
-        self.node_compress_linears = nn.ModuleList(
-            [nn.Linear(2 * channels, channels) for _ in range(3)]
-        )
-
-        self.feature_compress_linears = nn.ModuleList(
-            [nn.Linear(2 * channels, channels) for _ in range(3)]
-        )
-
-    def forward_global_encoder(self, data, idx):
-        h = data.h
-        edge_attr = data.edge_attr if hasattr(data, "edge_attr") else None
-        h = self.global_encoders[idx](
-            h, edge_index=data.edge_index, edge_attr=edge_attr, batch=data.batch
-        )
-        return h, 0
-
-    def forward_rw(self, data, idx):
-        h = data.h
-        out, ss_loss = self.local_encoders[idx](data, h, e=data.edge_attr)
-        return out, ss_loss
-
+    # @torch.compile
     def forward(self, data):
-        loss = 0
-        fused_global_feature = 0
-        for idx in range(3):
-            global_encoder_features, loss_global = self.forward_global_encoder(
-                data, idx
-            )
-            global_encoder_feature = global_mean_pool(
-                global_encoder_features, data.batch
-            )
+        ori_h = data.h
+        h = ori_h.unsqueeze(1).repeat(1, 4, 1)
 
-            rw_global_features, loss_rw = self.forward_rw(data, idx)
-            attn_rw_feature, attn_weights, attn_entropy_loss = self.path_attentions[
-                idx
-            ](global_encoder_feature, rw_global_features, data.batch)
+        mix_h, beta = self.hc0.width_connection(h)
+        h, g0, _, loss0 = self.pab0(mix_h[..., 0, :].squeeze(0), data)
+        h = self.hc0.depth_connection(mix_h, h, beta)
 
-            rw_global_features = rw_global_features.sum(dim=0)
-            data.h = self.node_compress_linears[idx](
-                torch.cat([global_encoder_features, rw_global_features], dim=-1)
-            )
+        mix_h, beta = self.hc1.width_connection(h)
+        h, g1, _, loss1 = self.pab1(mix_h[..., 0, :].squeeze(0), data)
+        h = self.hc1.depth_connection(mix_h, h, beta)
 
-            fused_global_feature = fused_global_feature + self.feature_compress_linears[
-                idx
-            ](torch.cat([global_encoder_feature, attn_rw_feature], dim=-1))
+        # mix_h, beta = self.hc2.width_connection(h)
+        h, g2, attn_weights, loss2 = self.pab0(mix_h[..., 0, :].squeeze(0), data)
+        # h = self.hc2.depth_connection(mix_h, h, beta)
 
-            loss = loss + loss_global + loss_rw + attn_entropy_loss
+        fused_global_feature = g0 + g1 + g2
+        loss = loss0 + loss1 + loss2
 
-        return fused_global_feature, data.h, attn_weights, loss
+        return fused_global_feature, h, attn_weights, loss

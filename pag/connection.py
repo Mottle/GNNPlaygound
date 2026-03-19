@@ -63,6 +63,8 @@ class HyperConnection(nn.Module):
         return mix_h, beta
 
     def depth_connection(self, mix_h, h_o, beta):
+        if h_o.dim() == 2:
+            h_o = h_o.unsqueeze(0)
         h = torch.einsum("blh,bln->blnh", h_o, beta) + mix_h[..., 1:, :]
 
         return h

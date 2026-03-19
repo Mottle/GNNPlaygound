@@ -8,7 +8,7 @@ from pag.path_attention import PathAttention
 from pag.fusion import AFF, IAFF
 
 
-class PABlock(nn.Module):
+class PathAttentionBlock(nn.Module):
     def __init__(
         self,
         channels: int,
@@ -27,7 +27,13 @@ class PABlock(nn.Module):
     ):
         super().__init__(*args, **kwargs)
 
-        self.macro_encoder = GNN(channels, num_layers=num_me_layers, dropout=me_dropout)
+        self.macro_encoder = GNN(
+            channels,
+            num_layers=num_me_layers,
+            dropout=me_dropout,
+            backbone="gin",
+            norm="layer_norm",
+        )
         self.local_encoder = RUMModel(
             in_features=channels,
             out_features=channels,
@@ -45,13 +51,11 @@ class PABlock(nn.Module):
         self.global_fuser = global_fuser(channels)
         self.node_fuser = node_fuser(channels)
 
-    def forward_local(self, data):
-        h = data.h
+    def forward_local(self, h, data):
         out, ss_loss = self.local_encoder(data, h, data.edge_attr)
         return out, ss_loss
 
-    def foward_macro(self, data):
-        h = data.h
+    def foward_macro(self, h, data):
         h = self.macro_encoder(
             h, edge_index=data.edge_index, edge_attr=data.edge_attr, batch=data.batch
         )
@@ -60,9 +64,9 @@ class PABlock(nn.Module):
     def readout(self, h, data):
         return self.pooler(h, data.batch)
 
-    def forward(self, data):
-        struct_features, ss_loss = self.forward_local(data)
-        macro_features, _ = self.foward_macro(data)
+    def forward(self, h, data):
+        struct_features, ss_loss = self.forward_local(h, data)
+        macro_features, _ = self.foward_macro(h, data)
         global_feature = self.readout(macro_features, data)
 
         attn_struct_feature, attn_weights, attn_entropy_loss = self.path_attention(
