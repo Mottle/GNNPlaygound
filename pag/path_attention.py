@@ -6,7 +6,7 @@ from torch_scatter import scatter_add
 
 
 class PathAttention(nn.Module):
-    def __init__(self, hidden_dim, dropout=0.2, lambda_entropy=0.05):
+    def __init__(self, hidden_dim, dropout=0.2, lambda_entropy=0.01):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.dropout = nn.Dropout(dropout)

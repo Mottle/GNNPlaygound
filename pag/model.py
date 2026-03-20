@@ -6,87 +6,83 @@ from rum.models import RUMModel
 from graph_ae.gnn import GNN
 from torch_geometric.nn import global_mean_pool
 from pag.connection import HyperConnection
-from pag.block import PathAttentionBlock
+from pag.layer.block import PathAttentionBlock
 from torch.nn import LayerNorm
+from pag.encoder.feature_encoder import FeatureEncoder
+from pag.encoder.rrwp_encoder import RRWPLinearEdgeEncoder, RRWPLinearNodeEncoder
+from torch_geometric.nn import LayerNorm
 
 
 class PathAttentionGraphormer(Module):
     def __init__(
         self,
+        node_in_channels: int,
+        edge_in_channels: int,
         channels: int,
-        num_rw_layers: int,
-        num_rw_samples: int,
-        num_rw_length: int,
-        num_global_encoder_layers: int,
-        rw_dropout: float = 0.2,
-        global_encoder_dropout: float = 0.2,
-        attention_dropout: float = 0.2,
+        pa_layers: list[PathAttentionBlock],
+        hc_rate: int = 4,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.channels = channels
-        self.rw_dropout = rw_dropout
-        self.global_encoder_dropout = global_encoder_dropout
-        self.attention_dropout = attention_dropout
+        self.hc_rate = hc_rate
+        self.num_pa_layers = len(pa_layers)
+
+        self.feature_encoder = FeatureEncoder(
+            node_in_channels, edge_in_channels, channels
+        )
+        self.node_rrwp_encoder = RRWPLinearNodeEncoder(8, channels)
+
+        if edge_in_channels is not None:
+            self.edge_rrwp_encoder = RRWPLinearEdgeEncoder(edge_in_channels, channels)
 
         # self.layer_norm0 = LayerNorm()
         # self.layer_norm1 = LayerNorm()
         # self.layer_norm2 = LayerNorm()
-
-        self.pab0 = PathAttentionBlock(
-            channels,
-            num_me_layers=2,
-            num_le_depth=2,
-            num_le_samples=5,
-            le_rw_length=2,
-            me_dropout=0.2,
-            le_dropout=0.2,
-            pa_dropout=0.4,
-        )
-        self.pab1 = PathAttentionBlock(
-            channels,
-            num_me_layers=2,
-            num_le_depth=2,
-            num_le_samples=5,
-            le_rw_length=4,
-            me_dropout=0.2,
-            le_dropout=0.2,
-            pa_dropout=0.4,
-        )
-        self.pab2 = PathAttentionBlock(
-            channels,
-            num_me_layers=1,
-            num_le_depth=1,
-            num_le_samples=3,
-            le_rw_length=8,
-            me_dropout=0.2,
-            le_dropout=0.2,
-            pa_dropout=0.4,
+        self.node_layer_norms = nn.ModuleList(
+            [LayerNorm(channels) for _ in range(self.num_pa_layers - 1)]
         )
 
-        self.hc0 = HyperConnection(channels, 4)
-        self.hc1 = HyperConnection(channels, 4)
-        # self.hc2 = HyperConnection(channels, 4)
+        self.pa_blocks = nn.ModuleList(pa_layers)
+        self.node_hc = nn.ModuleList([
+            HyperConnection(channels, hc_rate) for _ in range(self.num_pa_layers)
+        ])
+        self.feature_hc = nn.ModuleList([
+            HyperConnection(channels, hc_rate) for _ in range(self.num_pa_layers)
+        ])
 
     # @torch.compile
     def forward(self, data):
-        ori_h = data.h
-        h = ori_h.unsqueeze(1).repeat(1, 4, 1)
+        data = self.feature_encoder(data)
+        data = self.node_rrwp_encoder(data)
+        if (
+            hasattr(data, "edge_attr")
+            and data.edge_attr is not None
+            and hasattr(self, "edge_rrwp_encoder")
+        ):
+            data = self.edge_rrwp_encoder(data)
 
-        mix_h, beta = self.hc0.width_connection(h)
-        h, g0, _, loss0 = self.pab0(mix_h[..., 0, :].squeeze(0), data)
-        h = self.hc0.depth_connection(mix_h, h, beta)
+        # h
+        h = data.x.unsqueeze(1).repeat(1, self.hc_rate, 1)
+        g = global_mean_pool(data.x, data.batch)
+        g = g.unsqueeze(1).repeat(1, self.hc_rate, 1)
 
-        mix_h, beta = self.hc1.width_connection(h)
-        h, g1, _, loss1 = self.pab1(mix_h[..., 0, :].squeeze(0), data)
-        h = self.hc1.depth_connection(mix_h, h, beta)
+        in_model_loss = 0
 
-        # mix_h, beta = self.hc2.width_connection(h)
-        h, g2, attn_weights, loss2 = self.pab0(mix_h[..., 0, :].squeeze(0), data)
-        # h = self.hc2.depth_connection(mix_h, h, beta)
+        for idx in range(self.num_pa_layers):
+            mix_h, beta_h = self.node_hc[idx].width_connection(h)
+            mix_g, beta_g = self.feature_hc[idx].width_connection(g)
 
-        fused_global_feature = g0 + g1 + g2
-        loss = loss0 + loss1 + loss2
+            data.x = mix_h[..., 0, :].squeeze(0)
 
-        return fused_global_feature, h, attn_weights, loss
+            if idx != 0:
+                data.x = self.node_layer_norms[idx - 1](data.x)
+
+            h, g, a_w, loss = self.pa_blocks[idx](data)
+
+            h = self.node_hc[idx].depth_connection(mix_h, h, beta_h)
+            g = self.feature_hc[idx].depth_connection(mix_g, g, beta_g)
+            in_model_loss = in_model_loss + loss
+
+        return g[..., 0, :].squeeze(0), h[..., 0, :].squeeze(0), a_w, in_model_loss

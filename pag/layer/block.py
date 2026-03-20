@@ -64,7 +64,8 @@ class PathAttentionBlock(nn.Module):
     def readout(self, h, data):
         return self.pooler(h, data.batch)
 
-    def forward(self, h, data):
+    def forward(self, data):
+        h = data.x
         struct_features, ss_loss = self.forward_local(h, data)
         macro_features, _ = self.foward_macro(h, data)
         global_feature = self.readout(macro_features, data)
