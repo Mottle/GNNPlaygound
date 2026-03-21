@@ -93,6 +93,7 @@ from torch_cluster import random_walk
 #     return walks, eids
 
 
+@torch.compiler.disable
 def uniform_random_walk(data, num_samples, length, subsample=None):
     """
     Random walk on a PyG graph.

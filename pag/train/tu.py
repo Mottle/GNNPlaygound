@@ -18,23 +18,26 @@ from torch_geometric.nn import global_add_pool
 from pag.model import PathAttentionGraphormer
 from torch.optim.lr_scheduler import LambdaLR
 
+
 def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps):
     """
     创建一个学习率调度器，包含线性预热和线性衰减阶段。
-    
+
     参数:
         optimizer: PyTorch 优化器 (如 AdamW)
         num_warmup_steps: 预热阶段的步数 (Step)
         num_training_steps: 整个训练过程的总步数 (Step)
     """
+
     def lr_lambda(current_step: int):
         # 1. 预热阶段：线性增长
         if current_step < num_warmup_steps:
             return float(current_step) / float(max(1, num_warmup_steps))
         # 2. 退火阶段：线性衰减至 0
         return max(
-            0.0, 
-            float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
+            0.0,
+            float(num_training_steps - current_step)
+            / float(max(1, num_training_steps - num_warmup_steps)),
         )
 
     return LambdaLR(optimizer, lr_lambda)
@@ -45,7 +48,14 @@ def compute_loss(loss1, loss2):
 
 
 def train_model(
-    pooler, classifier, train_loader, optimizer, scheduler, criterion, device, use_amp=False
+    pooler,
+    classifier,
+    train_loader,
+    optimizer,
+    scheduler,
+    criterion,
+    device,
+    use_amp=False,
 ):
     pooler.train()
     classifier.train()
@@ -81,7 +91,7 @@ def train_model(
             pooled = torch.nan_to_num(pooled, nan=0.0, posinf=0.0, neginf=0.0)
             out = classifier(pooled)
             loss = compute_loss(criterion(out, data.y), additional_loss)
-        
+
         max_grad_norm = 1.0
 
         # 3. 反向传播与优化器更新
@@ -101,8 +111,8 @@ def train_model(
             scaler.update()
             # 判断是否跳过了 optimizer.step()
             # 如果 scale 变小了，说明遇到了 Inf/NaN，optimizer.step() 被跳过
-            skip_lr_sched = (scale_before > scaler.get_scale())
-            
+            skip_lr_sched = scale_before > scaler.get_scale()
+
             # 3. 只有在没有跳过的情况下，才更新学习率
             if not skip_lr_sched:
                 if scheduler is not None:
@@ -111,7 +121,7 @@ def train_model(
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
             optimizer.step()
-            
+
             if scheduler is not None:
                 scheduler.step()
 
@@ -189,14 +199,14 @@ def run_fold(dataset, loader, current_fold: int, config: BenchmarkConfig):
 
     # 优化器和损失函数
     optimizer = build_optimizer(model, classifier, config)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
     #     optimizer, mode="min", factor=0.5, patience=10, min_lr=1e-6
     # )
     scheduler = get_linear_schedule_with_warmup(
-        optimizer, 
-        num_warmup_steps=config.epochs / 10 * len(train_loader), 
-        num_training_steps=config.epochs * len(train_loader)
+        optimizer,
+        num_warmup_steps=config.epochs / 10 * len(train_loader),
+        num_training_steps=config.epochs * len(train_loader),
     )
 
     # 训练循环
@@ -302,6 +312,7 @@ def build_models(num_node_features, num_classes, config: BenchmarkConfig):
                     me_dropout=0.2,
                     le_dropout=0.2,
                     pa_dropout=0.3,
+                    pa_temp=1.0,
                 ),
                 PathAttentionBlock(
                     channels=hidden_dim,
@@ -312,6 +323,7 @@ def build_models(num_node_features, num_classes, config: BenchmarkConfig):
                     me_dropout=0.2,
                     le_dropout=0.2,
                     pa_dropout=0.3,
+                    pa_temp=0.8,
                 ),
                 PathAttentionBlock(
                     channels=hidden_dim,
@@ -322,17 +334,19 @@ def build_models(num_node_features, num_classes, config: BenchmarkConfig):
                     me_dropout=0.2,
                     le_dropout=0.2,
                     pa_dropout=0.3,
+                    pa_temp=0.6,
                 ),
                 PathAttentionBlock(
                     channels=hidden_dim,
                     num_me_layers=1,
-                    num_le_depth=1,
+                    num_le_depth=2,
                     num_le_samples=2,
                     le_rw_length=16,
                     me_dropout=0.2,
                     le_dropout=0.2,
                     pa_dropout=0.3,
-                )
+                    pa_temp=0.4,
+                ),
             ],
         ).to(run_device)
 

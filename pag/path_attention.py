@@ -6,7 +6,7 @@ from torch_scatter import scatter_add
 
 
 class PathAttention(nn.Module):
-    def __init__(self, hidden_dim, dropout=0.2, lambda_entropy=0.01):
+    def __init__(self, hidden_dim, temp: float = 1.0, dropout=0.2, lambda_entropy=0.01):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.dropout = nn.Dropout(dropout)
@@ -16,6 +16,7 @@ class PathAttention(nn.Module):
         self.k_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.v_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.scale = hidden_dim**-0.5
+        self.temp = temp
 
         self.initialize_weights()
 
@@ -78,7 +79,7 @@ class PathAttention(nn.Module):
         # 5. 计算 Attention Score
         # 用 extended_batch 把 Q 广播到 N*W 级别与 K 点积
         Q_gathered = Q[extended_batch]  # [N*W, D]
-        attn_scores = (Q_gathered * K).sum(dim=-1) * self.scale  # [N*W]
+        attn_scores = (Q_gathered * K).sum(dim=-1) * self.scale * self.temp  # [N*W]
 
         # 6. 图级 Softmax (在每张图的内部进行归一化)
         # attn_weights 的和在每个 graph 内部严格为 1

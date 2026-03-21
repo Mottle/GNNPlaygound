@@ -10,7 +10,26 @@ from pag.layer.block import PathAttentionBlock
 from torch.nn import LayerNorm
 from pag.encoder.feature_encoder import FeatureEncoder
 from pag.encoder.rrwp_encoder import RRWPLinearEdgeEncoder, RRWPLinearNodeEncoder
-from torch_geometric.nn import LayerNorm
+from torch_geometric.nn import LayerNorm as GLN
+from torch.nn import LayerNorm
+
+# ----------RESULTS----------
+#  spend time: 185.18 min
+#  NCI1(4110) for 10 fold:
+#  all     : 74.94% ± 1.40%
+#  last-50 : 79.42% ± 1.12%
+#  last-10 : 79.59% ± 1.07%
+#  last    : 79.64% ± 1.40%
+#  ---------------------------
+
+# ----------RESULTS----------
+#  spend time: 220.01 min
+#  NCI1(4110) for 10 fold:
+#  all     : 75.75% ± 1.36%
+#  last-50 : 79.20% ± 1.12%
+#  last-10 : 79.19% ± 0.91%
+#  last    : 78.95% ± 0.99%
+#  ---------------------------
 
 
 class PathAttentionGraphormer(Module):
@@ -41,16 +60,19 @@ class PathAttentionGraphormer(Module):
         # self.layer_norm1 = LayerNorm()
         # self.layer_norm2 = LayerNorm()
         self.node_layer_norms = nn.ModuleList(
-            [LayerNorm(channels) for _ in range(self.num_pa_layers - 1)]
+            [GLN(channels) for _ in range(self.num_pa_layers - 1)]
+        )
+        self.feature_norms = nn.ModuleList(
+            [LayerNorm(channels) for _ in range(self.num_pa_layers)]
         )
 
         self.pa_blocks = nn.ModuleList(pa_layers)
-        self.node_hc = nn.ModuleList([
-            HyperConnection(channels, hc_rate) for _ in range(self.num_pa_layers)
-        ])
-        self.feature_hc = nn.ModuleList([
-            HyperConnection(channels, hc_rate) for _ in range(self.num_pa_layers)
-        ])
+        self.node_hc = nn.ModuleList(
+            [HyperConnection(channels, hc_rate) for _ in range(self.num_pa_layers)]
+        )
+        self.feature_hc = nn.ModuleList(
+            [HyperConnection(channels, hc_rate) for _ in range(self.num_pa_layers)]
+        )
 
     # @torch.compile
     def forward(self, data):
@@ -75,11 +97,11 @@ class PathAttentionGraphormer(Module):
             mix_g, beta_g = self.feature_hc[idx].width_connection(g)
 
             data.x = mix_h[..., 0, :].squeeze(0)
-
             if idx != 0:
-                data.x = self.node_layer_norms[idx - 1](data.x)
+                data.x = self.node_layer_norms[idx - 1](data.x, data.batch)
 
             h, g, a_w, loss = self.pa_blocks[idx](data)
+            g = self.feature_norms[idx](g)
 
             h = self.node_hc[idx].depth_connection(mix_h, h, beta_h)
             g = self.feature_hc[idx].depth_connection(mix_g, g, beta_g)

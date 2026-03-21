@@ -19,6 +19,7 @@ class PathAttentionBlock(nn.Module):
         me_dropout: float,
         le_dropout: float,
         pa_dropout: float,
+        pa_temp: float = 1.0,
         pooler=global_add_pool,
         global_fuser=AFF,
         node_fuser=AFF,
@@ -46,7 +47,9 @@ class PathAttentionBlock(nn.Module):
             binary=False,
         )
 
-        self.path_attention = PathAttention(channels, pa_dropout)
+        self.path_attention = PathAttention(
+            channels, dropout=pa_dropout, temp=pa_temp, lambda_entropy=0.0
+        )
         self.pooler = pooler
         self.global_fuser = global_fuser(channels)
         self.node_fuser = node_fuser(channels)
