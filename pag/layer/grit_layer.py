@@ -105,6 +105,8 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
             score = score * E_w
             score = torch.sqrt(torch.relu(score)) - torch.sqrt(torch.relu(-score))
             score = score + E_b
+        else:
+            batch.E = None
 
         score = self.act(score)
         e_t = score
@@ -132,9 +134,9 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
         batch.wV = torch.zeros_like(
             batch.V_h
         )  # (num nodes in batch) x num_heads x out_dim
-        scatter(msg, batch.edge_index[1], dim=0, out=batch.wV, reduce="add")
+        scatter(msg, batch.edge_index[1], dim=0, out=batch.wV.to(msg), reduce="add")
 
-        if self.edge_enhance and batch.E is not None:
+        if self.edge_enhance and hasattr(batch, 'E') and batch.E is not None:
             rowV = scatter(e_t * score, batch.edge_index[1], dim=0, reduce="add")
             rowV = oe.contract("nhd, dhc -> nhc", rowV, self.VeRow, backend="torch")
             batch.wV = batch.wV + rowV
@@ -196,47 +198,48 @@ class GritTransformerLayer(nn.Module):
 
         # -------
         self.update_e = cfg.get("update_e", True)
-        self.bn_momentum = cfg.bn_momentum
-        self.bn_no_runner = cfg.bn_no_runner
+        self.bn_momentum = cfg.get('bn_momentum', 0.1)
+        self.bn_no_runner = cfg.get('bn_no_runner', False)
         self.rezero = cfg.get("rezero", False)
 
         self.act = act_dict[act]() if act is not None else nn.Identity()
-        if cfg.get("attn", None) is None:
-            cfg.attn = dict()
-        self.use_attn = cfg.attn.get("use", True)
+        # if cfg.get("attn", None) is None:
+        #     cfg.attn = dict()
+        # self.use_attn = cfg.attn.get("use", True)
+        self.use_attn = True
         # self.sigmoid_deg = cfg.attn.get("sigmoid_deg", False)
-        self.deg_scaler = cfg.attn.get("deg_scaler", True)
+        # self.deg_scaler = cfg.attn.get("deg_scaler", True)
+        self.deg_scaler = True
+
+        # self.attention = MultiHeadAttentionLayerGritSparse(
+        #     in_dim=in_dim,
+        #     out_dim=out_dim // num_heads,
+        #     num_heads=num_heads,
+        #     use_bias=cfg.attn.get("use_bias", False),
+        #     dropout=attn_dropout,
+        #     clamp=cfg.attn.get("clamp", 5.0),
+        #     act=cfg.attn.get("act", "relu"),
+        #     edge_enhance=cfg.attn.get("edge_enhance", True),
+        #     sqrt_relu=cfg.attn.get("sqrt_relu", False),
+        #     signed_sqrt=cfg.attn.get("signed_sqrt", False),
+        #     scaled_attn=cfg.attn.get("scaled_attn", False),
+        #     no_qk=cfg.attn.get("no_qk", False),
+        # )
 
         self.attention = MultiHeadAttentionLayerGritSparse(
             in_dim=in_dim,
             out_dim=out_dim // num_heads,
             num_heads=num_heads,
-            use_bias=cfg.attn.get("use_bias", False),
+            use_bias=False,
             dropout=attn_dropout,
-            clamp=cfg.attn.get("clamp", 5.0),
-            act=cfg.attn.get("act", "relu"),
-            edge_enhance=cfg.attn.get("edge_enhance", True),
-            sqrt_relu=cfg.attn.get("sqrt_relu", False),
-            signed_sqrt=cfg.attn.get("signed_sqrt", False),
-            scaled_attn=cfg.attn.get("scaled_attn", False),
-            no_qk=cfg.attn.get("no_qk", False),
+            clamp=5.0,
+            act='relu',
+            edge_enhance=True,
+            sqrt_relu=False,
+            signed_sqrt=True,
+            scaled_attn=False,
+            no_qk=False,
         )
-
-        # if cfg.attn.get('graphormer_attn', False):
-        #     self.attention = MultiHeadAttentionLayerGraphormerSparse(
-        #         in_dim=in_dim,
-        #         out_dim=out_dim // num_heads,
-        #         num_heads=num_heads,
-        #         use_bias=cfg.attn.get("use_bias", False),
-        #         dropout=attn_dropout,
-        #         clamp=cfg.attn.get("clamp", 5.),
-        #         act=cfg.attn.get("act", "relu"),
-        #         edge_enhance=True,
-        #         sqrt_relu=cfg.attn.get("sqrt_relu", False),
-        #         signed_sqrt=cfg.attn.get("signed_sqrt", False),
-        #         scaled_attn =cfg.attn.get("scaled_attn", False),
-        #         no_qk=cfg.attn.get("no_qk", False),
-        #     )
 
         self.O_h = nn.Linear(out_dim // num_heads * num_heads, out_dim)
         if O_e:
@@ -262,14 +265,14 @@ class GritTransformerLayer(nn.Module):
                 out_dim,
                 track_running_stats=not self.bn_no_runner,
                 eps=1e-5,
-                momentum=cfg.bn_momentum,
+                momentum=cfg.get('bn_momentum', 0.1),
             )
             self.batch_norm1_e = (
                 nn.BatchNorm1d(
                     out_dim,
                     track_running_stats=not self.bn_no_runner,
                     eps=1e-5,
-                    momentum=cfg.bn_momentum,
+                    momentum=cfg.get('bn_momentum', 0.1),
                 )
                 if norm_e
                 else nn.Identity()
@@ -287,7 +290,7 @@ class GritTransformerLayer(nn.Module):
                 out_dim,
                 track_running_stats=not self.bn_no_runner,
                 eps=1e-5,
-                momentum=cfg.bn_momentum,
+                momentum=cfg.get('bn_momentum', 0.1),
             )
 
         if self.rezero:

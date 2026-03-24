@@ -6,7 +6,7 @@ from rum.models import RUMModel
 from graph_ae.gnn import GNN
 from pag.path_attention import PathAttention
 from pag.fusion import AFF, IAFF
-
+from pag.layer.grit_layer import GritTransformerLayer
 
 class PathAttentionBlock(nn.Module):
     def __init__(
@@ -28,13 +28,16 @@ class PathAttentionBlock(nn.Module):
     ):
         super().__init__(*args, **kwargs)
 
-        self.macro_encoder = GNN(
-            channels,
-            num_layers=num_me_layers,
-            dropout=me_dropout,
-            backbone="gin",
-            norm="layer_norm",
-        )
+        # self.macro_encoder = GNN(
+        #     channels,
+        #     num_layers=num_me_layers,
+        #     dropout=me_dropout,
+        #     backbone="gin",
+        #     norm="layer_norm",
+        # )
+
+        self.macro_encoder = GritTransformerLayer(channels, channels, 4, me_dropout, me_dropout)
+
         self.local_encoder = RUMModel(
             in_features=channels,
             out_features=channels,
@@ -59,9 +62,10 @@ class PathAttentionBlock(nn.Module):
         return out, ss_loss
 
     def foward_macro(self, h, data):
-        h = self.macro_encoder(
-            h, edge_index=data.edge_index, edge_attr=data.edge_attr, batch=data.batch
-        )
+        # h = self.macro_encoder(
+        #     h, edge_index=data.edge_index, edge_attr=data.edge_attr, batch=data.batch
+        # )
+        h = self.macro_encoder(data)
         return h, 0
 
     def readout(self, h, data):
