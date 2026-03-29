@@ -4,5 +4,10 @@
 .vscode
 __pycache__
 dataset
+datasets/
 saved
 wandb
+log/
+logs/
+*.log
+.*/
