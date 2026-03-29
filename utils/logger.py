@@ -6,6 +6,7 @@ from rich.console import Console
 
 console = Console()
 
+
 def setup_logger(
     name: str = "training",
     log_dir: str = "logs",

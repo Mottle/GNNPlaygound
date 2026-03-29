@@ -19,10 +19,9 @@ import torch_sparse
 from torch_sparse import SparseTensor
 
 
-def add_node_attr(data: Data, value: Any,
-                  attr_name: Optional[str] = None) -> Data:
+def add_node_attr(data: Data, value: Any, attr_name: Optional[str] = None) -> Data:
     if attr_name is None:
-        if 'x' in data:
+        if "x" in data:
             x = data.x.view(-1, 1) if data.x.dim() == 1 else data.x
             data.x = torch.cat([x, value.to(x.device, x.dtype)], dim=-1)
         else:
@@ -33,29 +32,31 @@ def add_node_attr(data: Data, value: Any,
     return data
 
 
-
 @torch.no_grad()
-def add_full_rrwp(data,
-                  walk_length=8,
-                  attr_name_abs="rrwp", # name: 'rrwp'
-                  attr_name_rel="rrwp", # name: ('rrwp_idx', 'rrwp_val')
-                  add_identity=True,
-                  spd=False,
-                  **kwargs
-                  ):
-    device=data.edge_index.device
+def add_full_rrwp(
+    data,
+    walk_length=8,
+    attr_name_abs="rrwp",  # name: 'rrwp'
+    attr_name_rel="rrwp",  # name: ('rrwp_idx', 'rrwp_val')
+    add_identity=True,
+    spd=False,
+    **kwargs,
+):
+    device = data.edge_index.device
     ind_vec = torch.eye(walk_length, dtype=torch.float, device=device)
     num_nodes = data.num_nodes
     edge_index, edge_weight = data.edge_index, data.edge_weight
 
-    adj = SparseTensor.from_edge_index(edge_index, edge_weight,
-                                       sparse_sizes=(num_nodes, num_nodes),
-                                       )
+    adj = SparseTensor.from_edge_index(
+        edge_index,
+        edge_weight,
+        sparse_sizes=(num_nodes, num_nodes),
+    )
 
     # Compute D^{-1} A:
     deg = adj.sum(dim=1)
     deg_inv = 1.0 / adj.sum(dim=1)
-    deg_inv[deg_inv == float('inf')] = 0
+    deg_inv[deg_inv == float("inf")] = 0
     adj = adj * deg_inv.view(-1, 1)
     adj = adj.to_dense()
 
@@ -73,18 +74,17 @@ def add_full_rrwp(data,
             out = out @ adj
             pe_list.append(out)
 
-    pe = torch.stack(pe_list, dim=-1) # n x n x k
+    pe = torch.stack(pe_list, dim=-1)  # n x n x k
 
-    abs_pe = pe.diagonal().transpose(0, 1) # n x k
+    abs_pe = pe.diagonal().transpose(0, 1)  # n x k
 
     rel_pe = SparseTensor.from_dense(pe, has_value=True)
     rel_pe_row, rel_pe_col, rel_pe_val = rel_pe.coo()
     # rel_pe_idx = torch.stack([rel_pe_row, rel_pe_col], dim=0)
     rel_pe_idx = torch.stack([rel_pe_col, rel_pe_row], dim=0)
-    # the framework of GRIT performing right-mul while adj is row-normalized, 
+    # the framework of GRIT performing right-mul while adj is row-normalized,
     #                 need to switch the order or row and col.
     #    note: both can work but the current version is more reasonable.
-
 
     if spd:
         spd_idx = walk_length - torch.arange(walk_length)

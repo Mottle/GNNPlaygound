@@ -2,6 +2,7 @@
 训练工具模块
 提取通用的训练逻辑，减少代码冗余
 """
+
 import torch
 import logging
 from contextlib import nullcontext
@@ -27,9 +28,7 @@ def prepare_data(data, device: torch.device) -> torch.Tensor:
     return data.to(device)
 
 
-def compute_loss(
-    loss1: torch.Tensor, loss2: torch.Tensor
-) -> torch.Tensor:
+def compute_loss(loss1: torch.Tensor, loss2: torch.Tensor) -> torch.Tensor:
     """
     计算组合损失
 
@@ -73,7 +72,14 @@ def forward_model(
     return pooled, out, loss
 
 
-def update_progress(total_loss: float, correct: int, total: int, loss: float, pred: torch.Tensor, y: torch.Tensor) -> Tuple[float, int, int]:
+def update_progress(
+    total_loss: float,
+    correct: int,
+    total: int,
+    loss: float,
+    pred: torch.Tensor,
+    y: torch.Tensor,
+) -> Tuple[float, int, int]:
     """
     更新训练进度统计
 

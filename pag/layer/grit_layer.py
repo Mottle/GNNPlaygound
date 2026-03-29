@@ -86,6 +86,8 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
         else:
             self.act = act_dict[act]()
 
+        self.signed_sqrt = signed_sqrt
+
         if self.edge_enhance:
             self.VeRow = nn.Parameter(
                 torch.zeros(self.out_dim, self.num_heads, self.out_dim),
@@ -117,6 +119,11 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
 
         # final attn
         score = oe.contract("ehd, dhc->ehc", score, self.Aw, backend="torch")
+
+        if self.signed_sqrt:
+            scaling_factor = self.out_dim**0.5
+            score = score / scaling_factor
+
         if self.clamp is not None:
             score = torch.clamp(score, min=-self.clamp, max=self.clamp)
 
@@ -180,6 +187,8 @@ class GritTransformerLayer(nn.Module):
         act="relu",
         norm_e=True,
         O_e=True,
+        deg_scaler=True,
+        signed_sqrt=True,
         cfg=dict(),
         **kwargs
     ):
@@ -196,20 +205,14 @@ class GritTransformerLayer(nn.Module):
         self.layer_norm = layer_norm
         self.batch_norm = batch_norm
 
-        # -------
         self.update_e = cfg.get("update_e", True)
         self.bn_momentum = cfg.get("bn_momentum", 0.1)
         self.bn_no_runner = cfg.get("bn_no_runner", False)
         self.rezero = cfg.get("rezero", False)
 
         self.act = act_dict[act]() if act is not None else nn.Identity()
-        # if cfg.get("attn", None) is None:
-        #     cfg.attn = dict()
-        # self.use_attn = cfg.attn.get("use", True)
-        self.use_attn = True
-        # self.sigmoid_deg = cfg.attn.get("sigmoid_deg", False)
-        # self.deg_scaler = cfg.attn.get("deg_scaler", True)
-        self.deg_scaler = True
+        self.signed_sqrt = signed_sqrt
+        self.deg_scaler = deg_scaler
 
         # self.attention = MultiHeadAttentionLayerGritSparse(
         #     in_dim=in_dim,
@@ -236,8 +239,7 @@ class GritTransformerLayer(nn.Module):
             act="relu",
             edge_enhance=True,
             sqrt_relu=False,
-            signed_sqrt=True,
-            scaled_attn=False,
+            signed_sqrt=signed_sqrt,
             no_qk=False,
         )
 

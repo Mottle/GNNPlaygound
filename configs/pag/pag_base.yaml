@@ -1,15 +1,18 @@
 model:
   name: PathAttentionGraphormer
-  layers: 4
+  layers: 3
   hidden_dim: 64
   dropout: 0.3
   num_me_layers: 1
   me_dropout: 0.3
   le_dropout: 0.3
   encoder: type_dict
-  rrwp_max_length: 20
+  rrwp_max_length: 4
   use_node_attr: false
   edge_in_channels: null
+  grit_num_heads: 4
+  grit_deg_scaler: false
+  grit_signed_sqrt: true
   pa_dropout: 0.3
   pa_blocks:
     - depth: 3
@@ -24,10 +27,10 @@ model:
       samples: 2
       rw_length: 8
       temp: 0.6
-    - depth: 2
-      samples: 2
-      rw_length: 16
-      temp: 0.4
+    # - depth: 2
+    #   samples: 2
+    #   rw_length: 16
+    #   temp: 0.4
 
 train:
   batch_size: 64
@@ -36,7 +39,7 @@ train:
   warmup_ratio: 0.1
   early_stop: 300
   max_epochs: 300
-  use_amp: true
+  use_amp: false
   num_folds: 10
   shuffle: true
   gradient_clip: 1.5

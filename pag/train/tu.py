@@ -25,6 +25,7 @@ from utils.logger import setup_logger, get_logger
 
 try:
     from config import get_cfg_defaults
+
     YACS_AVAILABLE = True
 except ImportError:
     YACS_AVAILABLE = False
@@ -34,10 +35,16 @@ logger = setup_logger("training", log_dir="logs", log_to_file=True)
 
 def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps):
     """Create LR scheduler with linear warmup and decay."""
+
     def lr_lambda(current_step: int):
         if current_step < num_warmup_steps:
             return float(current_step) / float(max(1, num_warmup_steps))
-        return max(0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps)))
+        return max(
+            0.0,
+            float(num_training_steps - current_step)
+            / float(max(1, num_training_steps - num_warmup_steps)),
+        )
+
     return LambdaLR(optimizer, lr_lambda)
 
 
@@ -45,11 +52,8 @@ def compute_loss(loss1, loss2):
     return loss1 + loss2 / (loss1 + loss2 + 1e-6).detach()
 
 
-
-
-
 def run_fold(dataset, loader, current_fold: int, config, run_device):
-    is_yacs = hasattr(config, 'model')
+    is_yacs = hasattr(config, "model")
     log_prefix = f"fold: {current_fold+1}"
     logger.info(f"{log_prefix} {dataset} 开始训练...")
     train_loader, val_loader, test_loader = loader
@@ -68,9 +72,11 @@ def run_fold(dataset, loader, current_fold: int, config, run_device):
         early_stop_epochs = config.early_stop_epochs
         use_amp = config.amp
         gradient_clip = 1.0
-        label_smoothing = getattr(config, 'label_smoothing', 0.1)
+        label_smoothing = getattr(config, "label_smoothing", 0.1)
 
-    model, classifier = build_models(dataset.num_node_features, dataset.num_classes, config, run_device)
+    model, classifier = build_models(
+        dataset.num_node_features, dataset.num_classes, config, run_device
+    )
     optimizer = build_optimizer(model, classifier, config)
     criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
     scheduler = get_linear_schedule_with_warmup(
@@ -80,29 +86,67 @@ def run_fold(dataset, loader, current_fold: int, config, run_device):
     )
 
     metrics = {
-        'train_loss': [], 'train_acc': BenchmarkResult(),
-        'val_loss': [], 'val_acc': BenchmarkResult(),
-        'test_loss': [], 'test_acc': BenchmarkResult()
+        "train_loss": [],
+        "train_acc": BenchmarkResult(),
+        "val_loss": [],
+        "val_acc": BenchmarkResult(),
+        "test_loss": [],
+        "test_acc": BenchmarkResult(),
     }
     no_increased_times = 0
     no_record_epoch_num = 0
 
     model_name = config.model.name if is_yacs else config.model
     for epoch in track(range(epochs), description=f"{log_prefix} 训练 {dataset}"):
-        train_loss, train_acc = run_epoch(model, classifier, train_loader, criterion, run_device, model_name, optimizer, scheduler, use_amp, "train", "Train epoch", gradient_clip)
-        val_loss, val_acc = run_epoch(model, classifier, val_loader, criterion, run_device, model_name, use_amp=use_amp, mode="eval", progress_desc="Val epoch", gradient_clip=gradient_clip)
-        test_loss, test_acc = run_epoch(model, classifier, test_loader, criterion, run_device, model_name, use_amp=use_amp, mode="eval", progress_desc="Test epoch", gradient_clip=gradient_clip)
+        train_loss, train_acc = run_epoch(
+            model,
+            classifier,
+            train_loader,
+            criterion,
+            run_device,
+            model_name,
+            optimizer,
+            scheduler,
+            use_amp,
+            "train",
+            "Train epoch",
+            gradient_clip,
+        )
+        val_loss, val_acc = run_epoch(
+            model,
+            classifier,
+            val_loader,
+            criterion,
+            run_device,
+            model_name,
+            use_amp=use_amp,
+            mode="eval",
+            progress_desc="Val epoch",
+            gradient_clip=gradient_clip,
+        )
+        test_loss, test_acc = run_epoch(
+            model,
+            classifier,
+            test_loader,
+            criterion,
+            run_device,
+            model_name,
+            use_amp=use_amp,
+            mode="eval",
+            progress_desc="Test epoch",
+            gradient_clip=gradient_clip,
+        )
 
         if epoch > no_record_epoch_num:
-            metrics['train_loss'].append(train_loss)
-            metrics['train_acc'].append(train_acc)
-            metrics['val_loss'].append(val_loss)
-            metrics['val_acc'].append(val_acc)
-            metrics['test_loss'].append(test_loss)
-            metrics['test_acc'].append(test_acc)
+            metrics["train_loss"].append(train_loss)
+            metrics["train_acc"].append(train_acc)
+            metrics["val_loss"].append(val_loss)
+            metrics["val_acc"].append(val_acc)
+            metrics["test_loss"].append(test_loss)
+            metrics["test_acc"].append(test_acc)
 
         if early_stop and epoch > no_record_epoch_num:
-            if val_acc < metrics['val_acc'].get_max():
+            if val_acc < metrics["val_acc"].get_max():
                 no_increased_times += 1
             else:
                 no_increased_times = 0
@@ -118,7 +162,7 @@ def run_fold(dataset, loader, current_fold: int, config, run_device):
         )
 
     stamp_end = get_time_sync()
-    test_acc_res = metrics['test_acc']
+    test_acc_res = metrics["test_acc"]
     logger.info(
         f"{log_prefix} {test_acc_res.format()}\n"
         + f"{log_prefix} {test_acc_res.format(last=1)}\n"
@@ -126,7 +170,7 @@ def run_fold(dataset, loader, current_fold: int, config, run_device):
         + f"{log_prefix} {test_acc_res.format(last=50)}\n"
         + f"{log_prefix} 总运行时间: {(stamp_end - stamp_start) / 60:.4f}min"
     )
-    return metrics['train_acc'], test_acc_res
+    return metrics["train_acc"], test_acc_res
 
 
 def build_models(num_node_features, num_classes, config, run_device):
@@ -141,17 +185,17 @@ def build_models(num_node_features, num_classes, config, run_device):
     Returns: Tuple of (model, classifier)
     """
     input_dim = max(num_node_features, 1)
-    is_yacs = hasattr(config, 'model')
+    is_yacs = hasattr(config, "model")
     cfg = config.model if is_yacs else config
 
     params = [
-        ('hidden_dim', 'hidden_channels', None),
-        ('layers', 'num_layers', None),
-        ('name', 'model', None),
-        ('dropout', 'dropout', None),
-        ('me_dropout', 'me_dropout', 0.3),
-        ('le_dropout', 'le_dropout', 0.3),
-        ('pa_dropout', 'pa_dropout', 0.4 if not is_yacs else None),
+        ("hidden_dim", "hidden_channels", None),
+        ("layers", "num_layers", None),
+        ("name", "model", None),
+        ("dropout", "dropout", None),
+        ("me_dropout", "me_dropout", 0.3),
+        ("le_dropout", "le_dropout", 0.3),
+        ("pa_dropout", "pa_dropout", 0.4 if not is_yacs else None),
     ]
 
     hidden_dim, num_layers, model_type, dropout, me_dropout, le_dropout, pa_dropout = [
@@ -162,26 +206,50 @@ def build_models(num_node_features, num_classes, config, run_device):
     model = None
     if model_type in ("pag", "PathAttentionGraphormer"):
         from pag.layer.block import PathAttentionBlock
-        pa_configs = cfg.pa_blocks if is_yacs else [(3, 4, 2, 1.0), (2, 4, 4, 0.8), (2, 2, 8, 0.6), (2, 2, 16, 0.4)]
+
+        pa_configs = (
+            cfg.pa_blocks
+            if is_yacs
+            else [(3, 4, 2, 1.0), (2, 4, 4, 0.8), (2, 2, 8, 0.6), (2, 2, 16, 0.4)]
+        )
         if is_yacs:
             pa_layers = [
                 PathAttentionBlock(
-                    channels=hidden_dim, num_me_layers=cfg.num_me_layers,
-                    num_le_depth=b['depth'], num_le_samples=b['samples'],
-                    le_rw_length=b['rw_length'], me_dropout=me_dropout,
-                    le_dropout=le_dropout, pa_dropout=pa_dropout, pa_temp=b['temp']
-                ) for b in pa_configs
+                    channels=hidden_dim,
+                    num_me_layers=cfg.num_me_layers,
+                    num_le_depth=b["depth"],
+                    num_le_samples=b["samples"],
+                    le_rw_length=b["rw_length"],
+                    me_dropout=me_dropout,
+                    le_dropout=le_dropout,
+                    pa_dropout=pa_dropout,
+                    pa_temp=b["temp"],
+                    grit_num_heads=cfg.grit_num_heads,
+                    grit_deg_scaler=cfg.grit_deg_scaler,
+                    grit_signed_sqrt=cfg.grit_signed_sqrt,
+                )
+                for b in pa_configs
             ]
         else:
             pa_layers = [
-                PathAttentionBlock(channels=hidden_dim, num_me_layers=1,
-                    num_le_depth=d, num_le_samples=s, le_rw_length=r, me_dropout=me_dropout,
-                    le_dropout=le_dropout, pa_dropout=pa_dropout, pa_temp=t)
+                PathAttentionBlock(
+                    channels=hidden_dim,
+                    num_me_layers=1,
+                    num_le_depth=d,
+                    num_le_samples=s,
+                    le_rw_length=r,
+                    me_dropout=me_dropout,
+                    le_dropout=le_dropout,
+                    pa_dropout=pa_dropout,
+                    pa_temp=t,
+                )
                 for d, s, r, t in pa_configs
             ]
         model = PathAttentionGraphormer(
-            node_in_channels=input_dim, edge_in_channels=None, channels=hidden_dim,
-            pa_layers=pa_layers
+            node_in_channels=input_dim,
+            edge_in_channels=None,
+            channels=hidden_dim,
+            pa_layers=pa_layers,
         ).to(run_device)
 
     classifier = Classifier(hidden_dim, hidden_dim, num_classes).to(run_device)
@@ -189,12 +257,16 @@ def build_models(num_node_features, num_classes, config, run_device):
 
 
 def build_optimizer(model, classifier, config):
-    is_yacs = hasattr(config, 'model')
+    is_yacs = hasattr(config, "model")
     if is_yacs:
         weight_decay = config.train.weight_decay
-        macro_encoder_prefixes = ['feature_encoder', 'node_rrwp_encoder', 'edge_rrwp_encoder']
-        pa_prefixes = ['pa_blocks']
-        other_prefixes = ['node_hc', 'feature_hc', 'node_layer_norms', 'feature_norms']
+        macro_encoder_prefixes = [
+            "feature_encoder",
+            "node_rrwp_encoder",
+            "edge_rrwp_encoder",
+        ]
+        pa_prefixes = ["pa_blocks"]
+        other_prefixes = ["node_hc", "feature_hc", "node_layer_norms", "feature_norms"]
 
         macro_params = []
         pa_params = []
@@ -214,19 +286,35 @@ def build_optimizer(model, classifier, config):
             other_params.append(param)
 
         param_groups = [
-            {'params': macro_params, 'lr': config.train.lr_macro, 'weight_decay': weight_decay},
-            {'params': pa_params, 'lr': config.train.lr_pa, 'weight_decay': weight_decay},
-            {'params': other_params, 'lr': config.train.lr_other, 'weight_decay': weight_decay},
+            {
+                "params": macro_params,
+                "lr": config.train.lr_macro,
+                "weight_decay": weight_decay,
+            },
+            {
+                "params": pa_params,
+                "lr": config.train.lr_pa,
+                "weight_decay": weight_decay,
+            },
+            {
+                "params": other_params,
+                "lr": config.train.lr_other,
+                "weight_decay": weight_decay,
+            },
         ]
         return Adam(param_groups)
     else:
         lr = config.lr
-        weight_decay = getattr(config, 'weight_decay', 0.0)
-        return Adam(list(model.parameters()) + list(classifier.parameters()), lr=lr, weight_decay=weight_decay)
+        weight_decay = getattr(config, "weight_decay", 0.0)
+        return Adam(
+            list(model.parameters()) + list(classifier.parameters()),
+            lr=lr,
+            weight_decay=weight_decay,
+        )
 
 
 def run_k_fold4dataset(dataset, config, run_device):
-    is_yacs = hasattr(config, 'model')
+    is_yacs = hasattr(config, "model")
     if is_yacs:
         kfold = config.train.num_folds
         seed = config.seed if config.seed is not None else 0
@@ -239,7 +327,7 @@ def run_k_fold4dataset(dataset, config, run_device):
         model_name = config.model
         batch_size = config.batch_size
         catch_error = config.catch_error
-    
+
     kfold_dataset = kfold_split(dataset, kfold, seed)
     results = []
     all_start = get_time_sync()
@@ -303,7 +391,11 @@ def process_results(results: list[BenchmarkResult]):
     metrics = [(1, "last"), (10, "last_10"), (50, "last_50"), (None, "all")]
     results_dict = {}
     for window, key in metrics:
-        values = [result.get_mean(window) for result in results] if window else [result.get_mean() for result in results]
+        values = (
+            [result.get_mean(window) for result in results]
+            if window
+            else [result.get_mean() for result in results]
+        )
         results_dict[key] = (np.mean(values), np.std(values))
     return (
         results_dict["all"],
@@ -342,18 +434,35 @@ def kfold_split(source_dataset, k, seed):
     kfold = KFold(n_splits=k, shuffle=True, random_state=seed)
     return kfold.split(source_dataset)
 
+
 DATASET_SETS = {
     "simple": ["NCI1", "COX2", "IMDB-BINARY"],
-    "common": ["DD", "PROTEINS", "NCI1", "NCI109", "COX2", "IMDB-BINARY", "IMDB-MULTI", "FRANKENSTEIN"],
+    "common": [
+        "DD",
+        "PROTEINS",
+        "NCI1",
+        "NCI109",
+        "COX2",
+        "IMDB-BINARY",
+        "IMDB-MULTI",
+        "FRANKENSTEIN",
+    ],
     "com": ["COLLAB"],
     "bio&chem": ["NCI1", "NCI109", "COX2"],
-    "dense": ["mit_ct1", "mit_ct2", "highschool_ct1", "highschool_ct2", "infectious_ct1", "infectious_ct2"],
+    "dense": [
+        "mit_ct1",
+        "mit_ct2",
+        "highschool_ct1",
+        "highschool_ct2",
+        "infectious_ct1",
+        "infectious_ct2",
+    ],
 }
 
 
 def datasets(sets="common", name=None):
     """Generator for TUDataset objects. Yields TUDataset for each dataset in the set.
-    
+
     Args:
         sets: Dataset set name (key from DATASET_SETS). Ignored if name is provided.
         name: Single dataset name to use. If provided, overrides sets.
@@ -364,7 +473,7 @@ def datasets(sets="common", name=None):
         dataset_list = [name]
     else:
         dataset_list = DATASET_SETS.get(sets, [])
-    
+
     for dataset_name in dataset_list:
         use_node_attr = dataset_name == "FRANKENSTEIN"
         yield TUDataset(
@@ -375,9 +484,6 @@ def datasets(sets="common", name=None):
         )
 
 
-
-
-
 def save_result(results, filename, spent_time, config, config_disp=False):
     """Save results to file."""
     if not results:
@@ -385,10 +491,14 @@ def save_result(results, filename, spent_time, config, config_disp=False):
         return
     with open(filename, "a", encoding="utf-8") as f:
         if config_disp:
-            if hasattr(config, 'model'):
-                f.write(f"model: {config.model.name}, hidden_dim: {config.model.hidden_dim}, dropout: {config.model.dropout}\n")
-                f.write(f"train: lr=[macro:{config.train.lr_macro}, pa:{config.train.lr_pa}, other:{config.train.lr_other}], "
-                       f"batch_size={config.train.batch_size}, epochs={config.train.max_epochs}\n")
+            if hasattr(config, "model"):
+                f.write(
+                    f"model: {config.model.name}, hidden_dim: {config.model.hidden_dim}, dropout: {config.model.dropout}\n"
+                )
+                f.write(
+                    f"train: lr=[macro:{config.train.lr_macro}, pa:{config.train.lr_pa}, other:{config.train.lr_other}], "
+                    f"batch_size={config.train.batch_size}, epochs={config.train.max_epochs}\n"
+                )
             else:
                 f.write(f"{config.format()}")
         for name, all, last, last10, last50 in results:
@@ -400,13 +510,15 @@ def save_result(results, filename, spent_time, config, config_disp=False):
 
 
 def run(config, run_device):
-    is_yacs = hasattr(config, 'model')
-    
+    is_yacs = hasattr(config, "model")
+
     if is_yacs:
         import random
-        seed = config.seed if config.seed is not None else random.randint(0, 2**31-1)
+
+        seed = config.seed if config.seed is not None else random.randint(0, 2**31 - 1)
         random.seed(seed)
         import numpy as np
+
         np.random.seed(seed)
         torch.manual_seed(seed)
         if torch.cuda.is_available():
@@ -428,8 +540,12 @@ def run(config, run_device):
         logger.info(f"  encoder: {config.model.encoder}")
         logger.info(f"  pa_blocks:")
         for i, b in enumerate(config.model.pa_blocks):
-            logger.info(f"    block{i}: depth={b['depth']}, samples={b['samples']}, rw_length={b['rw_length']}, temp={b['temp']}")
-        logger.info(f"  学习率 (分组): macro={config.train.lr_macro}, pa={config.train.lr_pa}, other={config.train.lr_other}")
+            logger.info(
+                f"    block{i}: depth={b['depth']}, samples={b['samples']}, rw_length={b['rw_length']}, temp={b['temp']}"
+            )
+        logger.info(
+            f"  学习率 (分组): macro={config.train.lr_macro}, pa={config.train.lr_pa}, other={config.train.lr_other}"
+        )
         logger.info(f"  batch_size: {config.train.batch_size}")
         logger.info(f"  max_epochs: {config.train.max_epochs}")
         logger.info(f"  num_folds: {config.train.num_folds}")
@@ -443,17 +559,26 @@ def run(config, run_device):
         dataset_sets = config.sets
         model_name = config.model
         catch_error = config.catch_error
-    
+
     all_start = get_time_sync()
     results = []
 
-    for dataset_id, dataset in enumerate(track(datasets(sets=dataset_sets, name=dataset_name), description="All Datasets")):
+    for dataset_id, dataset in enumerate(
+        track(
+            datasets(sets=dataset_sets, name=dataset_name), description="All Datasets"
+        )
+    ):
         dataset_start = get_time_sync()
         all, last, last10, last50 = safe_execute(
             run_k_fold4dataset,
             f"运行 {dataset} 时出错",
             catch_error,
-            (BenchmarkResult(), BenchmarkResult(), BenchmarkResult(), BenchmarkResult()),
+            (
+                BenchmarkResult(),
+                BenchmarkResult(),
+                BenchmarkResult(),
+                BenchmarkResult(),
+            ),
             dataset,
             config,
             run_device,
@@ -468,11 +593,15 @@ def run(config, run_device):
         )
 
     if is_yacs:
-        logger.info(f"model: {config.model.name}, layers: {config.model.layers}, "
-                   f"hidden_dim: {config.model.hidden_dim}, dropout: {config.model.dropout}\n")
-        logger.info(f"train: lr=[macro:{config.train.lr_macro}, pa:{config.train.lr_pa}, other:{config.train.lr_other}], "
-                   f"batch_size={config.train.batch_size}, "
-                   f"max_epochs={config.train.max_epochs}, num_folds={config.train.num_folds}\n")
+        logger.info(
+            f"model: {config.model.name}, layers: {config.model.layers}, "
+            f"hidden_dim: {config.model.hidden_dim}, dropout: {config.model.dropout}\n"
+        )
+        logger.info(
+            f"train: lr=[macro:{config.train.lr_macro}, pa:{config.train.lr_pa}, other:{config.train.lr_other}], "
+            f"batch_size={config.train.batch_size}, "
+            f"max_epochs={config.train.max_epochs}, num_folds={config.train.num_folds}\n"
+        )
     else:
         logger.info(f"{config.format()}\n")
     logger.info(f"总运行时间: {(get_time_sync() - all_start) / 60:.2f} min")
@@ -486,7 +615,7 @@ def get_default_config():
     config.graph_norm = True
     config.batch_size = 256
     config.epochs = 500
-    config.dropout = getattr(config, 'dropout', 0.3)
+    config.dropout = getattr(config, "dropout", 0.3)
     config.sets = "bio&chem"
     config.catch_error = False
     config.early_stop = True
@@ -500,29 +629,41 @@ def get_default_config():
 def create_arg_parser():
     """Create argument parser for training configuration."""
     import argparse
+
     parser = argparse.ArgumentParser(description="Train PAG model on TUDataset")
-    parser.add_argument("--config_file", type=str, default="",
-                        help="Path to YAML config file")
-    parser.add_argument("--opts", nargs=argparse.REMAINDER,
-                        help="Override config options (e.g., train.lr_macro=0.001 train.lr_pa=0.0005 model.layers=4)")
-    parser.add_argument("--model", type=str, default=None,
-                        help="Model name (overrides config)")
-    parser.add_argument("--dataset", type=str, default=None,
-                        help="Dataset set to use (overrides config)")
+    parser.add_argument(
+        "--config_file", type=str, default="", help="Path to YAML config file"
+    )
+    parser.add_argument(
+        "--opts",
+        nargs=argparse.REMAINDER,
+        help="Override config options (e.g., train.lr_macro=0.001 train.lr_pa=0.0005 model.layers=4)",
+    )
+    parser.add_argument(
+        "--model", type=str, default=None, help="Model name (overrides config)"
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default=None,
+        help="Dataset set to use (overrides config)",
+    )
     return parser
 
 
 if __name__ == "__main__":
     import sys
+
     run_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     # Parse command line arguments
     parser = create_arg_parser()
     args = parser.parse_args()
-    
+
     # Try to use YACS config if available
     if YACS_AVAILABLE and args.config_file:
         from config import get_cfg_from_args, validate_config
+
         config = get_cfg_from_args(args)
         try:
             validate_config(config)
@@ -538,16 +679,25 @@ if __name__ == "__main__":
         if args.dataset:
             config.sets = args.dataset
         logger.info("Using legacy BenchmarkConfig (no config file specified)")
-    
-    for model_name in [config.model.name if hasattr(config, 'model') else config.model]:
-        if hasattr(config, 'model'):
+
+    for model_name in [config.model.name if hasattr(config, "model") else config.model]:
+        if hasattr(config, "model"):
             config.model.name = model_name
         else:
             config.model = model_name
-        if hasattr(config, 'seed'):
+        if hasattr(config, "seed"):
             config.seed = 0
         else:
             config.seed = 0
-        safe_execute(run, f"运行 {model_name} 时出错", 
-                     getattr(config, 'dataset.catch_error', True) if hasattr(config, 'dataset') else config.catch_error, 
-                     None, config, run_device)
+        safe_execute(
+            run,
+            f"运行 {model_name} 时出错",
+            (
+                getattr(config, "dataset.catch_error", True)
+                if hasattr(config, "dataset")
+                else config.catch_error
+            ),
+            None,
+            config,
+            run_device,
+        )

@@ -19,6 +19,11 @@ def get_cfg_defaults() -> CN:
     parser.model.use_node_attr = False
     parser.model.edge_in_channels = None
 
+    # GRIT (macro_encoder) configuration
+    parser.model.grit_num_heads = 4
+    parser.model.grit_deg_scaler = True
+    parser.model.grit_signed_sqrt = True
+
     # Path Attention Block configurations
     # Each block: (num_le_depth, num_le_samples, le_rw_length, pa_temp)
     parser.model.pa_blocks = [
@@ -77,17 +82,17 @@ def get_cfg_from_args(args: argparse.Namespace) -> CN:
 def validate_config(cfg: CN) -> None:
     """
     Validate configuration values to ensure they are within acceptable ranges.
-    
+
     Raises:
         ValueError: If any configuration value is invalid
         TypeError: If any configuration value has wrong type
-    
+
     Args:
         cfg: Configuration node to validate
     """
     # Valid model names
     valid_model_names = ["PathAttentionGraphormer", "pag"]
-    
+
     # Validate model.name - enum validation
     if not isinstance(cfg.model.name, str):
         raise TypeError(
@@ -97,7 +102,7 @@ def validate_config(cfg: CN) -> None:
         raise ValueError(
             f"model.name must be one of {valid_model_names}, got '{cfg.model.name}'"
         )
-    
+
     # Validate model.layers - positive integer
     if not isinstance(cfg.model.layers, int):
         raise TypeError(
@@ -107,7 +112,7 @@ def validate_config(cfg: CN) -> None:
         raise ValueError(
             f"model.layers must be a positive integer, got {cfg.model.layers}"
         )
-    
+
     # Validate model.hidden_dim - positive integer
     if not isinstance(cfg.model.hidden_dim, int):
         raise TypeError(
@@ -117,13 +122,13 @@ def validate_config(cfg: CN) -> None:
         raise ValueError(
             f"model.hidden_dim must be a positive integer, got {cfg.model.hidden_dim}"
         )
-    
+
     # Validate dropout values - range validation [0.0, 1.0]
     dropout_params = {
         "model.dropout": cfg.model.dropout,
         "model.pa_dropout": cfg.model.pa_dropout,
     }
-    
+
     for param_name, param_value in dropout_params.items():
         if not isinstance(param_value, (int, float)):
             raise TypeError(
@@ -133,7 +138,7 @@ def validate_config(cfg: CN) -> None:
             raise ValueError(
                 f"{param_name} must be between 0.0 and 1.0, got {param_value}"
             )
-    
+
     # Validate train.batch_size - positive integer
     if not isinstance(cfg.train.batch_size, int):
         raise TypeError(
@@ -143,7 +148,7 @@ def validate_config(cfg: CN) -> None:
         raise ValueError(
             f"train.batch_size must be a positive integer, got {cfg.train.batch_size}"
         )
-    
+
     # Validate train.num_folds - positive integer
     if not isinstance(cfg.train.num_folds, int):
         raise TypeError(
@@ -167,6 +172,29 @@ def validate_config(cfg: CN) -> None:
             )
         for key in required_block_keys:
             if key not in block:
-                raise ValueError(
-                    f"model.pa_blocks[{i}] missing required key '{key}'"
-                )
+                raise ValueError(f"model.pa_blocks[{i}] missing required key '{key}'")
+
+    # Validate GRIT parameters
+    if not isinstance(cfg.model.grit_num_heads, int):
+        raise TypeError(
+            f"model.grit_num_heads must be an integer, got {type(cfg.model.grit_num_heads).__name__}"
+        )
+    if cfg.model.grit_num_heads <= 0:
+        raise ValueError(
+            f"model.grit_num_heads must be a positive integer, got {cfg.model.grit_num_heads}"
+        )
+    if cfg.model.hidden_dim % cfg.model.grit_num_heads != 0:
+        raise ValueError(
+            f"model.hidden_dim ({cfg.model.hidden_dim}) must be divisible by "
+            f"model.grit_num_heads ({cfg.model.grit_num_heads})"
+        )
+
+    if not isinstance(cfg.model.grit_deg_scaler, bool):
+        raise TypeError(
+            f"model.grit_deg_scaler must be a boolean, got {type(cfg.model.grit_deg_scaler).__name__}"
+        )
+
+    if not isinstance(cfg.model.grit_signed_sqrt, bool):
+        raise TypeError(
+            f"model.grit_signed_sqrt must be a boolean, got {type(cfg.model.grit_signed_sqrt).__name__}"
+        )

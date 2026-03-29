@@ -10,13 +10,17 @@ GNN research framework implementing Path Attention Graphormer (PAG) for graph cl
 ## STRUCTURE
 ```
 GNNPlayground/
-├── pag/          # PAG model implementation (2102 LOC)
-│   ├── train/    # Training scripts (tu.py: 668 LOC, needs refactoring)
+├── configs/      # YAML configuration files ONLY (organized by project)
+│   ├── pag/      # PAG model configs
+│   │   └── pag_base.yaml
+│   └── graph_ae/ # GraphAE configs
+├── pag/          # PAG model implementation
+│   ├── train/    # Training scripts (tu.py)
 │   ├── encoder/  # Feature, TypeDict, RRWP encoders
 │   ├── layer/    # PathAttentionBlock, GRIT layers
 │   └── model.py # PathAttentionGraphormer
-├── tu/           # Benchmark framework (23000+ LOC train.py, tu.py)
-├── config/       # YACS configuration system (NEW)
+├── tu/           # Benchmark framework
+├── config/       # Python config loaders ONLY (YACS)
 ├── utils/        # Logger, training_utils, losses
 ├── grit/         # GRIT layer implementation
 ├── rum/          # RUM (Random Walk) modules
@@ -28,9 +32,9 @@ GNNPlayground/
 |------|----------|-------|
 | PAG model architecture | `pag/model.py`, `pag/path_attention.py` | Core model definition |
 | Training pipeline | `pag/train/tu.py` | 668 LOC, needs refactoring |
-| YACS configs | `config/__init__.py`, `config/pag_model.py` | New config system (preferred) |
+| YACS config loaders | `config/__init__.py`, `config/pag_model.py` | Python config system |
+| Config files | `configs/pag/pag_base.yaml` | YAML config presets (NEW location) |
 | Legacy configs | `tu/benchmark_config.py` | BenchmarkConfig class (backward compat) |
-| Config files | `config/pag_base.yaml`, `config/pag_large.yaml` | YAML config presets |
 | TUDataset loading | `tu/dataset/` | Graph dataset adapters |
 | Utility functions | `utils/training_utils.py`, `utils/logger.py` | New logging system |
 
@@ -83,7 +87,7 @@ from config import get_cfg_defaults, get_cfg_from_file, get_cfg_from_args, valid
 cfg = get_cfg_defaults()
 
 # Load from YAML file
-cfg = get_cfg_from_file("config/pag_base.yaml")
+cfg = get_cfg_from_file("configs/pag/pag_base.yaml")
 
 # Load from command line args (supports --config_file and --opts overrides)
 cfg = get_cfg_from_args(args)
@@ -97,9 +101,25 @@ dropout = cfg.MODEL.DROPOUT
 batch_size = cfg.TRAIN.BATCH_SIZE
 ```
 
-YAML config files are located in `config/`:
-- `config/pag_base.yaml` - Base configuration for most datasets
-- `config/pag_large.yaml` - Large model configuration
+YAML config files are located in `configs/`:
+- `configs/pag/pag_base.yaml` - Base configuration for most datasets
+- `configs/graph_ae/` - GraphAE configuration presets
+
+### Model Configuration Options
+
+Key model parameters in `configs/pag/pag_base.yaml`:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `hidden_dim` | int | 128 | Model hidden dimension |
+| `num_classes` | int | - | Output classes (dataset-specific) |
+| `dropout` | float | 0.5 | General dropout rate |
+| `me_dropout` | float | 0.5 | Message encoding dropout |
+| `le_dropout` | float | 0.5 | Link encoding dropout |
+| `pa_dropout` | float | 0.5 | Path attention dropout |
+| `grit_num_heads` | int | 4 | Number of attention heads in GRIT layer |
+| `grit_deg_scaler` | bool | true | Enable degree scaling in GRIT |
+| `grit_signed_sqrt` | bool | true | Enable signed sqrt normalization in GRIT attention |
 
 ### Legacy BenchmarkConfig System
 
@@ -130,7 +150,7 @@ pooler, model = build_models(config, dataset, run_device)
 
 # New YACS style (preferred)
 from config import get_cfg_from_file
-cfg = get_cfg_from_file("config/pag_base.yaml")
+cfg = get_cfg_from_file("configs/pag/pag_base.yaml")
 pooler, model = build_models(cfg, dataset, run_device)
 ```
 
@@ -159,12 +179,13 @@ screen -r gnn-training
 ```
 
 ## RECENT CHANGES (2026-03-29)
+- **Directory reorganization**: YAML configs moved from `config/` to `configs/` (Python code stays in `config/`)
 - **Config system refactored**: All keys now lowercase (model.hidden_dim not model.MODEL.HIDDEN_DIM)
-- **pa_blocks configurable**: PathAttentionBlock params (depth, samples, rw_length, temp) now in config/pag_base.yaml
+- **pa_blocks configurable**: PathAttentionBlock params (depth, samples, rw_length, temp) now in configs/pag/pag_base.yaml
+- **GRIT params configurable**: `grit_num_heads`, `grit_deg_scaler`, `grit_signed_sqrt` now in configs/pag/pag_base.yaml
 - **Training stability fixed**: dropout=0.5, lr=0.0001, weight_decay=0.005, gradient_clip=0.5, early_stop=50
 - **Logging improved**: RichHandler for console, logs saved to logs/training_<timestamp>.log
 - **AttributeError fixed**: Format string error after training completion resolved
-- **Config file changes**: config/pag_model.py, config/pag_base.yaml, pag/train/tu.py, utils/logger.py, utils/training_utils.py
 
 ## NOTES
 - **VRAM heavy**: Training consumes >20GB VRAM on large datasets

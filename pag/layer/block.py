@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Module
-from torch_geometric.nn import global_add_pool
+from torch_geometric.nn import global_add_pool, global_mean_pool, global_max_pool
 from rum.models import RUMModel
 from graph_ae.gnn import GNN
 from pag.path_attention import PathAttention
@@ -21,24 +21,25 @@ class PathAttentionBlock(nn.Module):
         le_dropout: float,
         pa_dropout: float,
         pa_temp: float = 1.0,
-        pooler=global_add_pool,
+        pooler=global_mean_pool,
         global_fuser=AFF,
         node_fuser=AFF,
+        grit_num_heads: int = 4,
+        grit_deg_scaler: bool = True,
+        grit_signed_sqrt: bool = True,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
-        # self.macro_encoder = GNN(
-        #     channels,
-        #     num_layers=num_me_layers,
-        #     dropout=me_dropout,
-        #     backbone="gin",
-        #     norm="layer_norm",
-        # )
-
         self.macro_encoder = GritTransformerLayer(
-            channels, channels, 4, me_dropout, me_dropout
+            channels,
+            channels,
+            grit_num_heads,
+            me_dropout,
+            me_dropout,
+            deg_scaler=grit_deg_scaler,
+            signed_sqrt=grit_signed_sqrt,
         )
 
         self.local_encoder = RUMModel(
@@ -86,7 +87,7 @@ class PathAttentionBlock(nn.Module):
         )
 
         fused_global_feature = self.global_fuser(global_feature, attn_struct_feature)
-        struct_features = struct_features.sum(dim=0)
+        struct_features = struct_features.mean(dim=0)
         fused_h = self.node_fuser(macro_features, struct_features)
 
         loss = attn_entropy_loss + ss_loss
