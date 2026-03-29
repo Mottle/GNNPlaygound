@@ -15,8 +15,8 @@ from yacs.config import CfgNode as CN
 import warnings
 
 
-def pyg_softmax(src, index, num_nodes=None):
-    r"""Computes a sparsely evaluated softmax.
+def pyg_softmax(src, index, num_nodes=None, clamp_val=10.0):
+    r"""Computes a sparsely evaluated softmax with numerical stability.
     Given a value tensor :attr:`src`, this function first groups the values
     along the first dimension based on the indices specified in :attr:`index`,
     and then proceeds to compute the softmax individually for each group.
@@ -26,6 +26,7 @@ def pyg_softmax(src, index, num_nodes=None):
         index (LongTensor): The indices of elements for applying the softmax.
         num_nodes (int, optional): The number of nodes, *i.e.*
             :obj:`max_val + 1` of :attr:`index`. (default: :obj:`None`)
+        clamp_val (float): Maximum absolute value before exp() to prevent overflow.
 
     :rtype: :class:`Tensor`
     """
@@ -33,6 +34,7 @@ def pyg_softmax(src, index, num_nodes=None):
     num_nodes = maybe_num_nodes(index, num_nodes)
 
     out = src - scatter_max(src, index, dim=0, dim_size=num_nodes)[0][index]
+    out = torch.clamp(out, min=-clamp_val, max=clamp_val)
     out = out.exp()
     out = out / (scatter_add(out, index, dim=0, dim_size=num_nodes)[index] + 1e-16)
 
@@ -121,7 +123,9 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
         score = oe.contract("ehd, dhc->ehc", score, self.Aw, backend="torch")
 
         if self.signed_sqrt:
-            scaling_factor = self.out_dim**0.5
+            # Use 2*sqrt(out_dim) for stronger numerical stability
+            # This ensures exp() inputs remain bounded in pyg_softmax
+            scaling_factor = 2 * (self.out_dim**0.5)
             score = score / scaling_factor
 
         if self.clamp is not None:
@@ -129,7 +133,7 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
 
         raw_attn = score
         score = pyg_softmax(
-            score, batch.edge_index[1]
+            score, batch.edge_index[1], clamp_val=8.0
         )  # (num relative) x num_heads x 1
         score = self.dropout(score)
         batch.attn = score

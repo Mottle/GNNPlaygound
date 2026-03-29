@@ -27,6 +27,7 @@ class PathAttentionBlock(nn.Module):
         grit_num_heads: int = 4,
         grit_deg_scaler: bool = True,
         grit_signed_sqrt: bool = True,
+        grit_bn_momentum: float = 0.01,
         *args,
         **kwargs,
     ):
@@ -40,6 +41,7 @@ class PathAttentionBlock(nn.Module):
             me_dropout,
             deg_scaler=grit_deg_scaler,
             signed_sqrt=grit_signed_sqrt,
+            cfg={"bn_momentum": grit_bn_momentum},
         )
 
         self.local_encoder = RUMModel(

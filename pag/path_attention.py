@@ -80,6 +80,8 @@ class PathAttention(nn.Module):
         # 用 extended_batch 把 Q 广播到 N*W 级别与 K 点积
         Q_gathered = Q[extended_batch]  # [N*W, D]
         attn_scores = (Q_gathered * K).sum(dim=-1) * self.scale * self.temp  # [N*W]
+        # Clamp to prevent softmax overflow in torch_geometric.utils.softmax
+        attn_scores = torch.clamp(attn_scores, min=-10.0, max=10.0)
 
         # 6. 图级 Softmax (在每张图的内部进行归一化)
         # attn_weights 的和在每个 graph 内部严格为 1

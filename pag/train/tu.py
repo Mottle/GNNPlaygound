@@ -227,6 +227,7 @@ def build_models(num_node_features, num_classes, config, run_device):
                     grit_num_heads=cfg.grit_num_heads,
                     grit_deg_scaler=cfg.grit_deg_scaler,
                     grit_signed_sqrt=cfg.grit_signed_sqrt,
+                    grit_bn_momentum=cfg.grit_bn_momentum,
                 )
                 for b in pa_configs
             ]

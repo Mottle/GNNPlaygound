@@ -23,6 +23,7 @@ def get_cfg_defaults() -> CN:
     parser.model.grit_num_heads = 4
     parser.model.grit_deg_scaler = True
     parser.model.grit_signed_sqrt = True
+    parser.model.grit_bn_momentum = 0.01
 
     # Path Attention Block configurations
     # Each block: (num_le_depth, num_le_samples, le_rw_length, pa_temp)
@@ -197,4 +198,13 @@ def validate_config(cfg: CN) -> None:
     if not isinstance(cfg.model.grit_signed_sqrt, bool):
         raise TypeError(
             f"model.grit_signed_sqrt must be a boolean, got {type(cfg.model.grit_signed_sqrt).__name__}"
+        )
+
+    if not isinstance(cfg.model.grit_bn_momentum, (int, float)):
+        raise TypeError(
+            f"model.grit_bn_momentum must be a float, got {type(cfg.model.grit_bn_momentum).__name__}"
+        )
+    if cfg.model.grit_bn_momentum <= 0 or cfg.model.grit_bn_momentum >= 1:
+        raise ValueError(
+            f"model.grit_bn_momentum must be in (0, 1), got {cfg.model.grit_bn_momentum}"
         )
