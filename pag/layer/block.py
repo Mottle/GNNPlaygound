@@ -8,6 +8,7 @@ from pag.path_attention import PathAttention
 from pag.fusion import AFF, IAFF
 from pag.layer.grit_layer import GritTransformerLayer
 
+
 class PathAttentionBlock(nn.Module):
     def __init__(
         self,
@@ -24,7 +25,7 @@ class PathAttentionBlock(nn.Module):
         global_fuser=AFF,
         node_fuser=AFF,
         *args,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -36,7 +37,9 @@ class PathAttentionBlock(nn.Module):
         #     norm="layer_norm",
         # )
 
-        self.macro_encoder = GritTransformerLayer(channels, channels, 4, me_dropout, me_dropout)
+        self.macro_encoder = GritTransformerLayer(
+            channels, channels, 4, me_dropout, me_dropout
+        )
 
         self.local_encoder = RUMModel(
             in_features=channels,
@@ -61,11 +64,12 @@ class PathAttentionBlock(nn.Module):
         out, ss_loss = self.local_encoder(data, h, data.edge_attr)
         return out, ss_loss
 
-    def foward_macro(self, h, data):
+    def forward_macro(self, h, data):
         # h = self.macro_encoder(
         #     h, edge_index=data.edge_index, edge_attr=data.edge_attr, batch=data.batch
         # )
-        h = self.macro_encoder(data)
+        batch = self.macro_encoder(data)
+        h = batch.x  # GritTransformerLayer 返回 batch 对象，我们需要提取 x
         return h, 0
 
     def readout(self, h, data):
@@ -74,7 +78,7 @@ class PathAttentionBlock(nn.Module):
     def forward(self, data):
         h = data.x
         struct_features, ss_loss = self.forward_local(h, data)
-        macro_features, _ = self.foward_macro(h, data)
+        macro_features, _ = self.forward_macro(h, data)
         global_feature = self.readout(macro_features, data)
 
         attn_struct_feature, attn_weights, attn_entropy_loss = self.path_attention(

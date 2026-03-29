@@ -1,0 +1,53 @@
+model:
+  name: PathAttentionGraphormer
+  layers: 4
+  hidden_dim: 64
+  dropout: 0.3
+  num_me_layers: 1
+  me_dropout: 0.3
+  le_dropout: 0.3
+  encoder: type_dict
+  rrwp_max_length: 20
+  use_node_attr: false
+  edge_in_channels: null
+  pa_dropout: 0.3
+  pa_blocks:
+    - depth: 3
+      samples: 4
+      rw_length: 2
+      temp: 1.0
+    - depth: 2
+      samples: 4
+      rw_length: 4
+      temp: 0.8
+    - depth: 2
+      samples: 2
+      rw_length: 8
+      temp: 0.6
+    - depth: 2
+      samples: 2
+      rw_length: 16
+      temp: 0.4
+
+train:
+  batch_size: 64
+  weight_decay: 0.005
+  warmup_steps: 0
+  warmup_ratio: 0.1
+  early_stop: 300
+  max_epochs: 300
+  use_amp: true
+  num_folds: 10
+  shuffle: true
+  gradient_clip: 1.5
+  label_smoothing: 0.1
+  lr_macro: 0.0001
+  lr_pa: 0.0005
+  lr_other: 0.0005
+
+dataset:
+  name: NCI1
+  sets: common
+  catch_error: true
+
+seed: 0

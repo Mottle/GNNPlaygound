@@ -136,7 +136,7 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
         )  # (num nodes in batch) x num_heads x out_dim
         scatter(msg, batch.edge_index[1], dim=0, out=batch.wV.to(msg), reduce="add")
 
-        if self.edge_enhance and hasattr(batch, 'E') and batch.E is not None:
+        if self.edge_enhance and hasattr(batch, "E") and batch.E is not None:
             rowV = scatter(e_t * score, batch.edge_index[1], dim=0, reduce="add")
             rowV = oe.contract("nhd, dhc -> nhc", rowV, self.VeRow, backend="torch")
             batch.wV = batch.wV + rowV
@@ -198,8 +198,8 @@ class GritTransformerLayer(nn.Module):
 
         # -------
         self.update_e = cfg.get("update_e", True)
-        self.bn_momentum = cfg.get('bn_momentum', 0.1)
-        self.bn_no_runner = cfg.get('bn_no_runner', False)
+        self.bn_momentum = cfg.get("bn_momentum", 0.1)
+        self.bn_no_runner = cfg.get("bn_no_runner", False)
         self.rezero = cfg.get("rezero", False)
 
         self.act = act_dict[act]() if act is not None else nn.Identity()
@@ -233,7 +233,7 @@ class GritTransformerLayer(nn.Module):
             use_bias=False,
             dropout=attn_dropout,
             clamp=5.0,
-            act='relu',
+            act="relu",
             edge_enhance=True,
             sqrt_relu=False,
             signed_sqrt=True,
@@ -265,14 +265,14 @@ class GritTransformerLayer(nn.Module):
                 out_dim,
                 track_running_stats=not self.bn_no_runner,
                 eps=1e-5,
-                momentum=cfg.get('bn_momentum', 0.1),
+                momentum=cfg.get("bn_momentum", 0.1),
             )
             self.batch_norm1_e = (
                 nn.BatchNorm1d(
                     out_dim,
                     track_running_stats=not self.bn_no_runner,
                     eps=1e-5,
-                    momentum=cfg.get('bn_momentum', 0.1),
+                    momentum=cfg.get("bn_momentum", 0.1),
                 )
                 if norm_e
                 else nn.Identity()
@@ -290,7 +290,7 @@ class GritTransformerLayer(nn.Module):
                 out_dim,
                 track_running_stats=not self.bn_no_runner,
                 eps=1e-5,
-                momentum=cfg.get('bn_momentum', 0.1),
+                momentum=cfg.get("bn_momentum", 0.1),
             )
 
         if self.rezero:

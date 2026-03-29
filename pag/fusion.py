@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch_geometric.nn import GCNConv, Sequential
 
+
 class AFF(nn.Module):
     def __init__(self, channels: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -36,14 +37,12 @@ class IAFF(nn.Module):
 class GAFF(nn.Module):
     def __init__(self, channels: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
-        self.backbone = Sequential('x, edge_index, batch', [
-            GCNConv(channels, channels), nn.LeakyReLU()
-        ])
-        self.backbone_linear = nn.Linear(channels, channels)
 
+        self.backbone = Sequential(
+            "x, edge_index, batch", [GCNConv(channels, channels), nn.LeakyReLU()]
+        )
+        self.backbone_linear = nn.Linear(channels, channels)
 
     def forward(self, xs, ys, x, y, batch):
         xs = self.backbone(xs, batch)
         ys = self.backbone(ys, batch)
-        
