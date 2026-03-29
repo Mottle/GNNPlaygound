@@ -32,5 +32,8 @@ torch_spline_conv = { url = "https://data.pyg.org/whl/torch-2.8.0%2Bcu129/torch_
 
 pytorch-lightning = { version = ">=2.6.0"}
 
+#alpha softmax & sparsemax
+entmax = { version = ">=1.3.0" }
+
 #toml config
 # jsonargparse = { version = "==4.45.0", extras = ["signatures", "toml", "argcomplete"] }
